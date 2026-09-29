@@ -3,6 +3,9 @@ const { invoke } = window.__TAURI__.core
 const els = {
   profile: document.querySelector('#profile'),
   target: document.querySelector('#target'),
+  dsh: document.querySelector('#dsh'),
+  allowLive: document.querySelector('#allowLive'),
+  capture: document.querySelector('#capture'),
   refresh: document.querySelector('#refresh'),
   summary: document.querySelector('#summary'),
   body: document.querySelector('#findings tbody'),
@@ -216,6 +219,20 @@ function renderJournal(status) {
 els.refresh.addEventListener('click', () => void refresh())
 els.profile.addEventListener('change', () => void refresh())
 els.target.addEventListener('change', () => renderSummary(state.doctor))
+els.capture.addEventListener('click', () => {
+  void (async () => {
+    const profile = els.profile.value
+    if (!profile) return
+    log(`真启动采集:会启动一次 dsh(写 session 与日志)。${els.allowLive.checked ? '已允许默认 home。' : '未勾选"允许在默认 home 真启动",内核会拒绝 —— 请先用 --home 指排演 home。'}`, 'cmd')
+    const symptoms = await call('真启动采集', () =>
+      invoke('capture', { profile, dsh: els.dsh.value.trim() || null, timeoutSeconds: 120, allowLive: els.allowLive.checked }),
+    )
+    if (!symptoms) return
+    log(`症状 ${symptoms.schema}:未激活条目 ${symptoms.entries.length} 条,退出码 ${symptoms.exitCode ?? '无'}`)
+    for (const entry of symptoms.entries) log(`  ${entry.module} (${entry.entryId}) ${entry.state} ${entry.missingServices.join(', ') || ''}`, 'cmd')
+    for (const note of symptoms.notes) log(`  注:${note}`, 'cmd')
+  })()
+})
 
 await loadProfiles()
 await refresh()

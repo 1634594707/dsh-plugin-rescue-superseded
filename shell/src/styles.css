@@ -51,6 +51,17 @@ header {
   color: var(--muted);
 }
 
+.check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+input#dsh {
+  width: 200px;
+}
+
 select,
 input,
 button {

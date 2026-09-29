@@ -6,3 +6,6 @@ lib/
 .dsh-rescue/
 tmp-demo/
 .DS_Store
+pr-out/
+tmp-surfaces/
+symptoms*.json

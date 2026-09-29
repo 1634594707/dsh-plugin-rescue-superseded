@@ -17,6 +17,10 @@
         <select id="profile"></select>
         <label for="target">对照版本</label>
         <input id="target" value="0.2.0-rc.1" spellcheck="false" />
+        <label for="dsh">dsh 入口</label>
+        <input id="dsh" placeholder="dsh 或 bin.js 路径" size="24" spellcheck="false" />
+        <label class="check"><input id="allowLive" type="checkbox" />允许在默认 home 真启动</label>
+        <button id="capture" type="button">真启动采集症状</button>
         <button id="refresh" type="button">重新体检</button>
       </div>
     </header>
@@ -49,6 +53,7 @@
       <span>写动作一律两步:先预览要改哪一行,再确认执行。</span>
       <span>还原靠改前的 <code>.bak</code>,逐字节比对。</span>
       <span>本工具不 fork、不 push、不开 PR,只备料。</span>
+      <span>静态分析算得出 peer 拦截;缺 provider 这类要靠「真启动采集」拿运行证据。</span>
     </footer>
 
     <script type="module" src="./shell.js"></script>

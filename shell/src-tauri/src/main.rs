@@ -64,7 +64,8 @@ fn run(args: &[String]) -> Result<Value, String> {
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
 
-    let mut child = command.spawn().map_err(|error| explain(format!("启动 {node_path()} 失败:{error}")))?;
+    let node = node_path();
+    let child = command.spawn().map_err(|error| explain(format!("启动 {node} 失败:{error}")))?;
     let output = child
         .wait_with_output()
         .map_err(|error| explain(format!("读取内核输出失败:{error}")))?;
@@ -177,6 +178,31 @@ fn fix_exempt(profile: String, plugin_version: String, runtime: String, confirm:
 }
 
 /// @param profile profile 名
+/// @param dsh 内核之外的 dsh 入口:可执行文件名,或源码仓构建出的 bin.js 路径
+/// @param timeout_seconds 启动采集的上限秒数
+/// @param allow_live 用户明确允许在自己那个默认 home 上真启动
+/// @return 采集到的症状
+#[tauri::command]
+fn capture(profile: String, dsh: Option<String>, timeout_seconds: u32, allow_live: bool) -> Result<Value, String> {
+    let mut args = vec![
+        "capture".to_string(),
+        "--profile".to_string(),
+        profile,
+        "--timeout".to_string(),
+        timeout_seconds.to_string(),
+        "--json".to_string(),
+    ];
+    if let Some(path) = dsh.filter(|item| !item.trim().is_empty()) {
+        args.push("--dsh".to_string());
+        args.push(path);
+    }
+    if allow_live {
+        args.push("--allow-live".to_string());
+    }
+    run(&args)
+}
+
+/// @param profile profile 名
 /// @return journal 现状
 #[tauri::command]
 fn status(profile: String) -> Result<Value, String> {
@@ -209,6 +235,7 @@ fn main() {
             doctor,
             why,
             pr_draft,
+            capture,
             fix_row,
             fix_exempt,
             status,

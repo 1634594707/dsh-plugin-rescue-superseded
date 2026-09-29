@@ -27,13 +27,17 @@ dsh-rescue doctor --profile desktop
 
 | 动作 | 做什么 | 落盘 |
 |---|---|---|
-| `doctor [--home DIR] [--profile NAME]` | 按宿主的门禁语义(`@deepseek-ai/dsh*` peer,带 `includePrerelease`)算谁会预检禁用;读补丁层的显式禁用行;读 `compatibility.json` 的已放行条目;用 `matrix.json` 给已知修法 | 无 |
+| `profiles [--json]` | 列该 home 下带 `package.json` 的 profile | 无 |
+| `doctor [--home DIR] [--profile NAME] [--json]` | 按宿主的门禁语义(`@deepseek-ai/dsh*` peer,带 `includePrerelease`)算谁会预检禁用;读补丁层的显式禁用行;读 `compatibility.json` 的已放行条目;用 `matrix.json` 给已知修法 | 无 |
+| `capture [--dsh PATH] [--timeout 秒] [--allow-live]` | 真启动一次 dsh,把"哪个条目没起来、在等哪个服务"采成 `rescue.symptoms/v1`。默认拒绝在你的默认 home 上启动 | 无(由 dsh 自己写 session/日志) |
+| `why <包名> [--to <官方版本>] [--symptoms 文件] [--json]` | 插件的具名 import 面 × 新旧官方公开面(旧面读本机已装包,新面 `npm pack` 目标版本并缓存);给了症状就把"缺 provider"从猜测升成运行证据 | 无 |
+| `pr <包名> --to <官方版本> [--out DIR]` | 诊断包 → PR 材料:`peer-dependencies.diff`、`PR.md`、`diagnostic.json`、可认仓库时给一条 `gh pr create` 命令 | `pr-out/`(工具目录) |
 | `fix exempt <pkg@version> --runtime VER --accept-risk` | 写一条精确版本豁免(F0) | `compatibility.json` |
 | `fix row <行 id> [--disabled true\|false] [--config FILE]` | 按行 id 整值覆盖 profile 的 `cordis.patch.yml`(F1);`config` 是整值替换,不是深合并 | `cordis.patch.yml` |
 | `undo <序号>` | 有 `.bak` 就从备份还原并核对哈希;没有备份就按 journal 记的原值写回,原本「不存在」就删掉该文件 | 上述文件 |
-| `status` | 看 journal:已应用、未完成意图、失败计数 | 无 |
+| `status [--json]` | 看 journal:已应用、未完成意图、失败计数 | 无 |
 
-`--dry-run` 对所有写动作可用:算出将要写什么、登记意图,但不碰用户文件。
+`--dry-run` 对所有写动作可用:算出将要写什么、登记意图,但不碰用户文件。`--json` 时 stdout 只有 JSON,提示走 stderr —— 桌面壳就靠这条边界复用同一个内核。
 
 ## 四条不变量
 
@@ -44,6 +48,30 @@ dsh-rescue doctor --profile desktop
 **还原是机制,不是承诺。** 改任何用户文件之前先留 `.bak-<stamp>`,写入走 `.tmp-<stamp>` + `rename`,对 `EACCES/EBUSY/EPERM` 退避重试 10 次、间隔 `(n+1)×50 ms`,常量对齐 `vendor/include/src/index.ts`。逐字节等价由 `.bak` 保证,不由 YAML/JSON 往返保证;备份读不到就报「无法还原:备份缺失」,不猜原值。测试里那条还原断言就是拿还原前后的 sha256 相等来判的。
 
 **证据不唯一就不指认。** peer 范围解析不了、豁免条目对不上当前 runtime、矩阵没有覆盖该区间的记录 —— 这些都只报观察到的事实与根因,不推荐自动修法。`matrix.json` 目前是空的,所以 `doctor` 只给分类与「让作者放宽范围」这一条,不会替你冒风险。
+
+## 实测到的四条(都在这台机器上跑出来,不是推断)
+
+1. **`^0.2.0` 和 `>=0.2.0` 都不放行 `0.2.0-rc.1`**,即使带 `includePrerelease: true`(宿主同款判据)。所以 `pr` 生成的建议范围是 `>=0.2.0-0 <0.3.0` —— 给作者提 `^0.2.0` 等于提一个仍然被拦的 PR。
+2. **可选条目未激活不写 `startup-*.log`,只打一行警告**。实测两次:`dsh: warning: 1 entry did not activate` + `… pending (waiting for service: webServer)`,而 `logs/` 里什么都没有 —— 所以 `capture` 解析的是启动摘要,报告文件只是顺带。
+3. **"peer 过了"不等于"能用"**。npm 上的 `@michengai/dsh-archive-manager` 已经出到 1.0.7 并把 peer 放宽到含 `0.2.0-rc.1`;真启动后它不再被拦,而是卡在等一个 headless profile 里根本没有的 `webServer`。同一个插件,失效种类从 `peer-range-stale` 变成缺 provider —— 这正是静态分析与真启动必须分工的原因。
+4. **判据不能搬到 Rust 去算**:Rust 的 `semver` crate 对真实插件写的 `0.1.0-rc.8 || 0.1.1-rc.2 || …` 是 16/16 解析失败,而宿主的门禁就是 node-semver。壳只渲染,内核留在 JS。
+
+## 排演一个新版本(不碰你的 profile)
+
+```sh
+export DSH_HOME=/某个临时目录                      # dsh 认这个环境变量
+HARNESS=/路径/deepseek-harness                     # 里面是 0.2.0-rc.1 的源码,先 pnpm run build
+node "$HARNESS/apps/cli/lib/bin.js" --profile headless "hi"                  # 首次自动初始化模板 profile
+node "$HARNESS/apps/cli/lib/bin.js" plugin --profile headless add @michengai/dsh-archive-manager
+node lib/cli.js capture --home "$DSH_HOME" --profile headless --dsh "$HARNESS/apps/cli/lib/bin.js" --json > symptoms.json
+node lib/cli.js why @michengai/dsh-archive-manager --home "$DSH_HOME" --profile headless --to 0.2.0-rc.1 --symptoms symptoms.json
+```
+
+`capture` 不给你 `--allow-live` 就拒绝在默认 home 上启动,并且把 `DSH_HOME` 显式传给子进程 —— 少这一条,排演就会打到你的真 profile。
+
+## 桌面壳
+
+`shell/` 是极薄 Tauri 壳:列 profile、渲染内核 JSON、把按钮排成"预览 → 确认"。判据与写盘一行都不在壳里,所以换 UI 不用重算判据。跑法与踩到的 Windows 坑(`link.exe` 顺序、`CREATE_NO_WINDOW`、占位图标)见 [shell/README.md](shell/README.md)。
 
 ## 结构
 

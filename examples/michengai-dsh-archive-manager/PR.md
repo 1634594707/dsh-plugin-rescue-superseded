@@ -168,4 +168,4 @@ dsh-rescue why @michengai/dsh-archive-manager --to 0.2.0-rc.1 --json
 
 附件:diagnostic.json, peer-dependencies.diff(其中 `diagnostic.json` 是 rescue.diagnostic/v1)
 
-生成:2026-09-29T06:38:35.746Z
+生成:2026-09-29T06:57:12.426Z

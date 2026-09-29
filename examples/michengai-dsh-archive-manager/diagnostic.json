@@ -1,6 +1,6 @@
 {
   "schema": "rescue.diagnostic/v1",
-  "generatedAt": "2026-09-29T06:38:35.746Z",
+  "generatedAt": "2026-09-29T06:57:12.426Z",
   "profile": "desktop",
   "runtime": {
     "installed": "0.1.7-rc.2",
@@ -53,31 +53,38 @@
   "serviceKeys": [
     {
       "key": "locale",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     },
     {
       "key": "remote",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     },
     {
       "key": "sessions",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     },
     {
       "key": "slots",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     },
     {
       "key": "typert",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     },
     {
       "key": "webServer",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     },
     {
       "key": "workspaces",
-      "status": "found-nowhere"
+      "status": "found-nowhere",
+      "source": "static"
     }
   ],
   "gaps": [],
