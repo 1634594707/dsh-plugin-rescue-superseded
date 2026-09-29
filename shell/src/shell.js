@@ -86,7 +86,7 @@ function renderSummary(doctor) {
     `会被预检拦下 <b>${doctor.counts.blocked}</b>`,
     `已写豁免 <b>${doctor.counts.exempted}</b>`,
     `没装上 <b>${doctor.counts.missing}</b>`,
-    doctor.matrixAvailable ? '矩阵可用' : '矩阵没用上:只报根因,不指认修法',
+    doctor.matrixAvailable ? `矩阵 ${doctor.matrixRecords ?? 0} 条记录${doctor.matrixRecords ? '' : '(只报根因,不指认修法)'}` : '矩阵没用上:只报根因,不指认修法',
   ]
   els.summary.innerHTML = chips.map((chip) => `<span class="chip">${chip}</span>`).join('')
 }

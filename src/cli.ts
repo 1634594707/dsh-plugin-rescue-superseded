@@ -177,6 +177,7 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
         profileDir: snapshot.dir,
         runtime: { installed: runtimeVersion, channel: /-(alpha|beta|rc)\./.test(runtimeVersion ?? '') ? 'rc' : 'stable' },
         matrixAvailable: matrix !== null,
+        matrixRecords: matrix?.records.length ?? 0,
         counts: {
           bundles: snapshot.bundles.length,
           runtime: evaluation.runtimeBundles.length,
@@ -200,7 +201,8 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     }))
     console.log(`profile:${snapshot.dir}`)
     console.log(`已装 bundle ${snapshot.bundles.length} 个(其中官方 runtime ${evaluation.runtimeBundles.length} 个,不参与兼容性判定):peer 全满足 ${evaluation.compatible.length} 个,会被拦 ${evaluation.blocked.length} 个,已放行 ${evaluation.exempted.length} 个,没装上 ${evaluation.missingBundles.length} 个。`)
-    if (matrix === null) console.log('分类可用(来自文件事实),修法一栏需要矩阵或你显式批准。')
+    if (matrix === null) console.log('矩阵没用上(分类可用,修法一栏需要矩阵或你显式批准)。')
+    else if (matrix.records.length === 0) console.log(`矩阵已加载但 0 条记录:只报根因,不指认修法。`)
     for (const suggestion of suggestions) console.log(`下一步:${suggestion.command}   (风险自负;正解是${suggestion.rootFix})`)
     return 0
   }
