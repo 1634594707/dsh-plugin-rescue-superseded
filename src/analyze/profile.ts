@@ -125,6 +125,23 @@ function collectRows(items: unknown[]): PatchRow[] {
   return rows
 }
 
+/** 一个 profile 解析包时用到的根目录,按优先级排列。 */
+export function resolutionRoots(snapshot: ProfileSnapshot): string[] {
+  return [path.join(snapshot.dir, 'node_modules'), path.join(snapshot.home, 'profiles', 'node_modules'), path.join(snapshot.home, 'node_modules')]
+}
+
+/**
+ * @param snapshot profile 读取结果
+ * @param name 包名
+ * @returns 该包在三级 `node_modules` 里最先命中的包根目录,找不到为空
+ */
+export function packageDir(snapshot: ProfileSnapshot, name: string): string | null {
+  for (const root of resolutionRoots(snapshot)) {
+    if (fs.existsSync(path.join(root, name, 'package.json'))) return path.join(root, name)
+  }
+  return null
+}
+
 /**
  * 读一个 profile。
  *

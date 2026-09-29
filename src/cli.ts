@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
 import { classify } from './analyze/classify.ts'
+import { buildDiagnostic, renderDiagnostic } from './analyze/why.ts'
 import { listProfiles, readProfile, resolveHome } from './analyze/profile.ts'
 import { evaluateProfile } from './analyze/peers.ts'
 import { assertMatrixDocument } from './matrix/schema.ts'
@@ -31,7 +32,7 @@ interface Parsed {
 }
 
 /** 认识的开关。不在这里的直接报错:安全开关(`--dry-run`)拼错时静默忽略,等于把写动作当成演练。 */
-const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help'])
+const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help', 'to', 'json', 'cache'])
 
 /**
  * @param name 去掉前缀的开关名
@@ -126,6 +127,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (parsed.command === 'help' || parsed.flags.help === true) {
     console.log(`用法:
   dsh-rescue doctor [--home DIR] [--profile NAME]        分析(只读)
+  dsh-rescue why <包名> [--to <官方版本>] [--json] [--cache DIR]
+                                                         插件依赖面 × 新旧官方公开面 → 诊断包
   dsh-rescue fix exempt <pkg@version> --runtime VER --accept-risk
                                                          写一条精确版本豁免(F0)
   dsh-rescue fix row <行 id> [--disabled true|false] [--config FILE]
@@ -158,6 +161,18 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (matrix === null) console.log('分类可用(来自文件事实),修法一栏需要矩阵或你显式批准。')
     const runtimeVersion = evaluation.runtimeVersion
     if (runtimeVersion !== null) for (const verdict of evaluation.blocked) console.log(`下一步:dsh-rescue fix exempt ${verdict.plugin}@${verdict.version} --runtime ${runtimeVersion} --accept-risk   (风险自负;正解是让作者放宽 ${verdict.gaps[0]?.peer ?? 'peer'})`)
+    return 0
+  }
+
+  if (parsed.command === 'why') {
+    const plugin = parsed.positional[0]
+    if (!plugin) throw new Error('why 需要插件包名,例如:dsh-rescue why @michengai/dsh-archive-manager --to 0.2.0-rc.1')
+    const target = typeof parsed.flags.to === 'string' ? parsed.flags.to : null
+    const evaluation = evaluateProfile(snapshot)
+    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, ...(typeof parsed.flags.cache === 'string' ? { cacheDir: path.resolve(parsed.flags.cache) } : {}) })
+    if (parsed.flags.json === true) console.log(JSON.stringify(bundle, null, 2))
+    else console.log(renderDiagnostic(bundle))
+    console.log(`要给别人看:--json 存成文件(${plugin.replace(/^@/, '').replace(/[\/@]/g, '_')}.json),对方 doctor / why 都能在同一份数据上接着走。`)
     return 0
   }
 

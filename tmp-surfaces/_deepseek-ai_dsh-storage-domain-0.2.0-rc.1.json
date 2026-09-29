@@ -1,0 +1,1 @@
+{"package":"@deepseek-ai/dsh-storage-domain","version":"0.2.0-rc.1","subpaths":[".","./invariant","./package.json","./src/*"],"symbols":["Config","DomainError","DomainFacility","DomainImpl","apply","defineDomain","descriptorOf","domainTable","inject","name"],"providedKeys":[]}
