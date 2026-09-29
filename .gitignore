@@ -2,6 +2,7 @@ node_modules/
 lib/
 *.tgz
 *.tsbuildinfo
-pnpm-lock.yaml.bak
 .plugin-rescue/
+.dsh-rescue/
+tmp-demo/
 .DS_Store

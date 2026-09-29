@@ -23,7 +23,7 @@ export interface FileSnapshot {
 /** 还原所需的原值,按修法取值(§5.3 的表)。 */
 export type BeforeValue =
   | { readonly kind: 'config-patch'; readonly rowText: string; readonly backupPath: string }
-  | { readonly kind: 'allow'; readonly priorEntry: string | null }
+  | { readonly kind: 'allow'; readonly key: string; readonly priorEntry: string | null }
   | { readonly kind: 'patch'; readonly dependencies: Readonly<Record<string, string>>; readonly bundles: readonly string[] }
   | { readonly kind: 'manual' }
 
@@ -48,6 +48,8 @@ export interface AppliedRecord {
   readonly target: string
   readonly before: BeforeValue
   readonly backupPaths: readonly string[]
+  /** 目标文件是这次改动创建的吗?是的话撤销到空应当删掉它,而不是留一份 `{}` 的残留(§3.2「还原不留痕迹」)。 */
+  readonly created: boolean
   readonly appliedAt: string
 }
 
@@ -149,11 +151,12 @@ export function beginIntent(state: RescueState, intent: IntentRecord): RescueSta
  * @param state 当前状态
  * @param intent 已完成的意图
  * @param backupPaths 本次改动的 `.bak-<stamp>` 原件
+ * @param created 目标文件是否由这次改动创建
  * @param appliedAt 完成时间
  * @returns 意图出列、已应用记录入列的状态
  */
-export function confirmApplied(state: RescueState, intent: IntentRecord, backupPaths: readonly string[], appliedAt: string): RescueState {
-  const record: AppliedRecord = { matrixId: intent.matrixId, plugin: intent.plugin, harness: intent.harness, fixKind: intent.fixKind, target: intent.target, before: intent.before, backupPaths, appliedAt }
+export function confirmApplied(state: RescueState, intent: IntentRecord, backupPaths: readonly string[], created: boolean, appliedAt: string): RescueState {
+  const record: AppliedRecord = { matrixId: intent.matrixId, plugin: intent.plugin, harness: intent.harness, fixKind: intent.fixKind, target: intent.target, before: intent.before, backupPaths, created, appliedAt }
   return { ...state, intents: state.intents.filter((item) => item.startedAt !== intent.startedAt || item.target !== intent.target), applied: [...state.applied, record] }
 }
 
@@ -206,7 +209,7 @@ export function renderUndoNote(record: AppliedRecord): string {
   const original = record.before.kind === 'config-patch'
     ? `被覆盖的行原文:\n    ${record.before.rowText}\n  备份: ${record.before.backupPath}`
     : record.before.kind === 'allow'
-      ? `compatibility.json 原值: ${record.before.priorEntry ?? '(原本不存在该条目)'}`
+      ? `${record.before.key} 的原值: ${record.before.priorEntry ?? '(原本不存在该条目)'}`
       : record.before.kind === 'patch'
         ? `安装前 dependencies: ${JSON.stringify(record.before.dependencies)}\n  安装前 dsh.profile.bundles: ${record.before.bundles.join(', ') || '(空)'}`
         : '本条为迁移指南,无落盘变更,无需还原'

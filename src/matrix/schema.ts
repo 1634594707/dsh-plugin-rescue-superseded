@@ -140,10 +140,10 @@ export interface MatrixRecord {
   readonly source: string
 }
 
-/** 一份矩阵文档:分发参数 + 元数据 + 记录。 */
+/** 一份矩阵文档:元数据 + 记录;`delivery` 只在矩阵作为远端包分发时才有,本地文件可以不带。 */
 export interface MatrixDocument {
   readonly schema: typeof MATRIX_SCHEMA
-  readonly delivery: {
+  readonly delivery?: {
     readonly mode: 'pull-on-demand'
     readonly source: { readonly registry: 'npm'; readonly package: string }
     readonly verify: 'npm-provenance+schema-assert'
@@ -328,8 +328,9 @@ export function assertMatrixDocument(raw: unknown): asserts raw is MatrixDocumen
   if (raw.schema !== MATRIX_SCHEMA) problems.push(`document: unsupported schema "${String(raw.schema)}", expected ${MATRIX_SCHEMA}`)
 
   const delivery = raw.delivery
-  if (!isRecord(delivery)) problems.push('document: delivery section required')
-  else {
+  if (delivery !== undefined) {
+    if (!isRecord(delivery)) problems.push('document: delivery section must be an object when present')
+    else {
     checkUnknownFields(delivery, DELIVERY_FIELDS, 'delivery', problems)
     if (delivery.mode !== 'pull-on-demand') problems.push('delivery.mode must be pull-on-demand (the body ships no matrix, §3.1)')
     if (delivery.verify !== 'npm-provenance+schema-assert') problems.push('delivery.verify must be npm-provenance+schema-assert (a sha256 expectation from the same registry verifies nothing, §5.1)')
@@ -351,6 +352,7 @@ export function assertMatrixDocument(raw: unknown): asserts raw is MatrixDocumen
       if (!isBoolean(offline.offlineOnly)) problems.push('delivery.offline.offlineOnly must be a boolean (§10 Q13)')
     }
   }
+  }
 
   const meta = raw.meta
   if (!isRecord(meta)) problems.push('document: meta section required')
@@ -369,7 +371,7 @@ export function assertMatrixDocument(raw: unknown): asserts raw is MatrixDocumen
   }
 
   const records = raw.records
-  if (!Array.isArray(records) || records.length === 0) problems.push('document: records must be a non-empty array')
+  if (!Array.isArray(records)) problems.push('document: records must be an array')
   else {
     const seenIds = new Set<string>()
     records.forEach((record, index) => {

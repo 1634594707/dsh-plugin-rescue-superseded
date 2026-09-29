@@ -1,22 +1,33 @@
 {
-  "name": "dsh-plugin-rescue",
-  "private": true,
+  "name": "@dsh-rescue/cli",
+  "version": "0.1.0",
+  "description": "dsh 社区插件失效分析与补丁:doctor 定位根因,fix 落一条可见、可还原的改动。",
   "type": "module",
-  "packageManager": "pnpm@11.7.0",
+  "license": "MIT",
+  "bin": {
+    "dsh-rescue": "lib/cli.js"
+  },
+  "files": [
+    "lib",
+    "matrix.json"
+  ],
   "engines": {
-    "node": ">=24"
+    "node": ">=22.19"
   },
   "scripts": {
-    "build": "tsc -b packages/rescue",
-    "typecheck": "tsc -p packages/rescue --noEmit && tsc -p packages/rescue/tsconfig.test.json",
-    "test": "node --test \"packages/rescue/src/**/*.test.ts\"",
-    "check:manifest": "node scripts/check-manifest.mjs",
-    "check:size": "node scripts/check-size.mjs",
-    "demo": "node scripts/demo.mjs",
-    "gate": "pnpm run check:manifest && pnpm run build && pnpm run test && pnpm run check:size"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "doctor": "node src/cli.ts doctor",
+    "gate": "pnpm run typecheck && pnpm run build && pnpm run test"
+  },
+  "dependencies": {
+    "semver": "^7.6.3",
+    "yaml": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/semver": "^7.5.8",
     "typescript": "^5.9.3"
   }
 }

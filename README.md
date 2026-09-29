@@ -1,88 +1,77 @@
 ---
-description: "dsh-plugin-rescue 项目总览:权威文档指针、三条硬约束、目录结构、当前进度与上手路径。"
+description: "dsh-rescue:分析 dsh profile 里社区插件为什么失效,并落一条可见、可还原的补丁。"
 kind: "project-index"
 ---
 
-# dsh-plugin-rescue
+# dsh-rescue
 
-给 dsh 装的**补丁管理器**,模型参照游戏 mod 补丁:本体不打补丁,补丁旁挂;补丁按需分发;一键装、卸、还原;兼容性由矩阵裁定。
+一条命令分析 + 一条命令打补丁的小项目。它不启动 dsh、不装插件、不改宿主 —— 读的是 profile 目录里已经存在的事实,写的也是用户本来就能看见的那几个文件。
 
-dsh 侧的一切(状态读取、复检、装包、写豁免)都**已经存在**。本项目只写增量,这也是它能压到百 KB 量级的原因。
-
-| | |
-|---|---|
-| 状态 | 方案 v0.4;项目已建仓,`rescue.matrix/v2` 校验器与写盘/状态/报告的纯逻辑 kernel 已落地并有测试,**doctor / patcher 的宿主耦合面未写**(要真实 profile) |
-| 权威文档 | 机制口径以 [proposal.md](proposal.md) 为准,推进清单以 [roadmap.md](roadmap.md) 为准;本目录即项目根,改动落在这里(harness 仓内的 `dsh-plugin-rescue/` 是起草副本) |
-| 基线 | deepseek-harness @ `4878cdabd8`(dsh `0.2.0-rc.1`);peer 实测版本 `@deepseek-ai/cordis` 4.0.4、`@deepseek-ai/cordis-plugin-include` 1.0.9 |
-| 参考实现 | deepseek-harness-desktop @ `21dbac0ccd`(插件恢复模式已上线,同基线),引用写作 `desktop:` 前缀 |
-| 表决 | 阶段 0 的 Q7 = 独立 scope `@dsh-rescue/*`;Q13 = 默认出网、可切 `offlineOnly`;Q14 = 体积写进 CI;Q17 = 原子写本体自写并对齐宿主常量。Q1 / Q6 / Q8 / Q5 的无异议确认与 Q15 / Q16 仍待评审 |
-
-## 这个项目解决什么
-
-官方升级后社区插件失效,目前只有"拦截"没有"修复":peer 门禁把不兼容插件挡在加载前,用户只能 `allow-version --accept-risk` 裸放行或等作者;另一些失效停在 PENDING,启动时有一次报告,运行期彻底静默。
-
-rescue 补上的是**诊断 → 判定 → 一键修复 → 可还原**这条链路,以及它背后的兼容矩阵。
-
-## 三条硬约束
-
-**一、体积。** 本体越小越好,补丁是差异不是重写。口径已冻结:`pnpm pack` 后 tarball 内 `lib` 下所有 `.js` + `cordis.patch.yml` 的字节和(`.d.ts` 不计)。
-
-| 预算项 | 目标 | 实测(2026-09-29) |
-|---|---|---|
-| rescue 本体 | ≤ 100 KB | **42 418 B / 7 文件** |
-| 单个补丁 | ≤ 10 KB | 待 `patches/` 建包后量(A8) |
-| 矩阵缓存 | ≤ 300 KB | 种子数据 **4 452 B** |
-| 本体依赖树 | 0 个新增运行时依赖 | `dependencies` 为空、peer 只含 cordis 与 include,由 `check:manifest` 守 |
-
-**二、方便。** 用户不该理解 patch 文件:零 CLI(**日常路径**,逃生舱例外)、自动触发、一个入口、一键修复、像禁用 mod 一样还原、失败用 mod 的措辞、默认只读。逐项验收见 [proposal.md §3.2](proposal.md#32-易用性验收标准)。
-
-**三、可还原是机制,不是承诺。** "逐字节等价"要求改前备份、原子写、意图先行的状态记录;"零 CLI"要求一条**不依赖 rescue 能否加载**的还原路径([§5.7](proposal.md#57-逃生舱还原能力不能依赖它自己要救的运行时))。
-
-明确禁止的增重项:不内置矩阵、不自带 diff 引擎、不带 AST/codemod(F3 已砍)、不自带 YAML 库(`entryListSchema` 从 `@deepseek-ai/cordis-plugin-include` 以 peer 取得)。
-
-## 目录
-
-```text
-dsh-plugin-rescue/
-  proposal.md               方案 v0.4 —— 机制、口径、验收标准的唯一来源
-  roadmap.md                唯一推进清单 —— 阶段收口条件、A1–A15 断言、放弃清单、顺延顺序
-  packages/
-    rescue/                 本体 @dsh-rescue/rescue(0 个 dependencies)
-      cordis.patch.yml      bundle 补丁层,两行现在都 disabled:入口未接线,挂了只会让 profile 自己 PENDING
-      src/matrix/schema.ts  rescue.matrix/v2 受控词表与字段契约(附录 C 的可执行实现)
-      src/matrix/cache.ts   缓存键与淘汰:字节上限优先、单份超限拒收并回退上一份
-      src/report/redact.ts  渲染前过滤:路径与凭据模式剔除,附被过滤项清单(A7)
-      src/report/render.ts  确定性排序的诊断报告(同一 profile 两次输出逐字节相同)
-      src/state/store.ts    rescue.state/v1:意图先行 journal、按 fixKind 取值的 before、尝试计数与还原判定
-      src/write/atomic.ts   原子写:`.bak-<stamp>` → `.tmp-<stamp>` → rename,重试常量对齐宿主(Q17)
-    matrix/                 @dsh-rescue/matrix:纯数据,无代码、无 install script
-      data/0.2-rc.json      种子记录(附录 B;confidence 按附录 C 的证据规则重新落级,见 roadmap 不符项 f)
-  scripts/
-    check-size.mjs          §3.1 口径的体积门禁(读 tarball,不借外部 tar)
-    check-manifest.mjs      dependencies 为空、peer 无 dsh-*、无 install 钩子
-  patches/                  补丁规格与样例(§5.4 的"一补丁一包",包尚未建)
-  review/                   v0.1–v0.3 期间的工作材料,结论已合入 v0.4 正文;术语按当时写法冻结
-  scripts/demo.mjs            走一遍 kernel 的可运行演示(pnpm run demo)
-  .github/workflows/ci.yml  门禁:manifest → build → test → size,ubuntu + windows 双 runner(Q14)
+```sh
+dsh-rescue doctor --profile desktop
 ```
 
-## 现在能跑什么
+```text
+插件诊断报告(profile: desktop,harness 0.1.7-rc.2,证据通道: rc)
+  @michengai/dsh-archive-manager 0.1.44   ✗ 被预检禁用
+    根因: peer 范围不覆盖本机 runtime 0.1.7-rc.2:client-connection 要 0.1.0-rc.8 … 0.1.6-alpha.2,已装 0.1.7-rc.2;另 13 个同类 —— peer-range-stale
+    排除: 放宽 peer 也救不了:@deepseek-ai/dsh-client-runtime 本机没装
+    可用修复: F0 显式豁免该精确版本 [写入 compatibility.json]
+              | F4 让作者放宽 peer 范围 [查看]
+下一步:dsh-rescue fix exempt @michengai/dsh-archive-manager@0.1.44 --runtime 0.1.7-rc.2 --accept-risk
+```
+
+上面这段是对本机 `~/.dsh/profiles/desktop` 的真实读取结果:10 个 bundle 里 7 个 peer 全满足、1 个会被预检拦下、2 个是官方 runtime 不参与判定。
+
+## 命令
+
+| 动作 | 做什么 | 落盘 |
+|---|---|---|
+| `doctor [--home DIR] [--profile NAME]` | 按宿主的门禁语义(`@deepseek-ai/dsh*` peer,带 `includePrerelease`)算谁会预检禁用;读补丁层的显式禁用行;读 `compatibility.json` 的已放行条目;用 `matrix.json` 给已知修法 | 无 |
+| `fix exempt <pkg@version> --runtime VER --accept-risk` | 写一条精确版本豁免(F0) | `compatibility.json` |
+| `fix row <行 id> [--disabled true\|false] [--config FILE]` | 按行 id 整值覆盖 profile 的 `cordis.patch.yml`(F1);`config` 是整值替换,不是深合并 | `cordis.patch.yml` |
+| `undo <序号>` | 有 `.bak` 就从备份还原并核对哈希;没有备份就按 journal 记的原值写回,原本「不存在」就删掉该文件 | 上述文件 |
+| `status` | 看 journal:已应用、未完成意图、失败计数 | 无 |
+
+`--dry-run` 对所有写动作可用:算出将要写什么、登记意图,但不碰用户文件。
+
+## 四条不变量
+
+**默认只读。** `doctor` 与 `status` 不写任何东西;写动作必须点名 `fix` 或 `undo`,而豁免还必须带 `--accept-risk`(与宿主 `setProfileVersionExemption` 同判据)。
+
+**写了要确认生效。** 每次写完重读文件,核对那一行或那个键确实是预期值 —— 宿主的 `applyEntryPatches` 匹配不到目标只 warn 后跳过,「没报错」不等于「改对了」。核对不过就报错,并说明文件现在是什么状态、下次启动会怎样。
+
+**还原是机制,不是承诺。** 改任何用户文件之前先留 `.bak-<stamp>`,写入走 `.tmp-<stamp>` + `rename`,对 `EACCES/EBUSY/EPERM` 退避重试 10 次、间隔 `(n+1)×50 ms`,常量对齐 `vendor/include/src/index.ts`。逐字节等价由 `.bak` 保证,不由 YAML/JSON 往返保证;备份读不到就报「无法还原:备份缺失」,不猜原值。测试里那条还原断言就是拿还原前后的 sha256 相等来判的。
+
+**证据不唯一就不指认。** peer 范围解析不了、豁免条目对不上当前 runtime、矩阵没有覆盖该区间的记录 —— 这些都只报观察到的事实与根因,不推荐自动修法。`matrix.json` 目前是空的,所以 `doctor` 只给分类与「让作者放宽范围」这一条,不会替你冒风险。
+
+## 结构
+
+```text
+src/
+  cli.ts              命令入口、参数、journal 读写
+  analyze/profile.ts  读 profile:bundle 清单、runtime 版本、补丁层、豁免文件(目录与 junction 都认)
+  analyze/peers.ts    按宿主的门禁语义判 peer
+  analyze/classify.ts 观察 → 失效类别 → 诊断行
+  fix/apply.ts        F0 / F1 的落盘装备:意图先行 → .bak → .tmp+rename → 重读确认 → applied
+  matrix/schema.ts    rescue.matrix/v2 的受控词表与字段校验(未知枚举值拒绝入库)
+  report/render.ts    确定性排序的报告输出:同一 profile 两次跑,输出逐字节相同
+  state/store.ts      rescue.state/v1:意图、before、尝试计数、还原判定、undo.md
+test/                 37 项:profile 读取、peer 判定、写盘与还原、备份缺失不猜、只读姿态拒绝写
+matrix.json           已知失效知识库(受控词表在 src/matrix/schema.ts)
+```
+
+## 上手
 
 ```sh
 pnpm install
-pnpm run gate        # check:manifest → build → test(40 项)→ check:size
-pnpm run typecheck   # 含 *.test.ts
-pnpm run demo        # 走一遍已落地的 kernel:矩阵校验、F1 写盘与还原、报告渲染、脱敏、重试预算
+pnpm run gate                                                   # typecheck(含测试)→ build → 37 项测试
+node src/cli.ts doctor --profile desktop                        # Node 24 直接跑源码,不必先 build
+node lib/cli.js fix row <行 id> --disabled false --profile ...   # 或跑构建产物
 ```
 
-`scripts/demo.mjs` 用的是临时目录里的假 profile 与种子矩阵,**不是真实 dsh 安装** —— 它证明的是这些判据在实现层成立,不替代 A1–A15 的实机结论。
+写动作会改你 profile 里的真实文件。想先看效果,把 profile 目录里的 `package.json` 与 `cordis.patch.yml` 复制一份、`node_modules` 做成 junction,再用 `--home` 指过去(仓库内 `tmp-demo/` 已 gitignore)。
 
-宿主耦合面(D1 复用、D2 `internal/status` 订阅、`installBundle`、`setVersionExemption`、真实 profile 上的还原)一行未写:那些判据要在装了 dsh 的 profile 上实测,归 [roadmap.md](roadmap.md) 阶段 1 的 A1–A6 / A9 / A10。
+## 相关文档
 
-## 上手路径
-
-1. 读 [proposal.md](proposal.md) 的 §0.1(与宿主已有能力的关系)、§3.1(体积口径)、§5.4(交付形态)—— 三段决定项目长什么样;
-2. 读 [roadmap.md](roadmap.md) 的阶段 0(四条已回、两条待回)与[前提核验记录](roadmap.md#前提核验记录head-4878cdabd8) —— 核验记录已在当前 HEAD 上把承重引用的 `file:line` 全部读过一遍,并因此回写了五处不符;骨架落地时新发现的两处口径不符(附录 B 记录缺 `runLogId`、区间裸写法无定义)记在同节末尾;
-3. 读 [patches/README.md](patches/README.md) 与 [patches/example-foo-legacy.md](patches/example-foo-legacy.md) —— 补丁是什么东西、完整实例长什么样;
-4. 评审 `proposal.md` §10 剩下的 Q1 / Q6 / Q8 / Q5 复述确认与 Q15 / Q16;
-5. 按 [roadmap.md](roadmap.md) 阶段 1 补 M0 的实机断言,再按阶段 2 把 doctor / patcher 接线、把 `rescue-doctor` / `rescue-patcher` 两行从 `disabled` 打开。
+`proposal.md` 是这个项目早先的平台化草案(补丁管理器、矩阵按需拉取、GUI 分区、agent tool),`roadmap.md` 是它配套的推进清单。当前形态只取其中「静态分析 + F0/F1 落盘 + 可还原」这条最小组合,其余部分已在两份文件开头标注为**未采纳**。`review/` 与 `patches/` 保留为设计材料,不是待办。

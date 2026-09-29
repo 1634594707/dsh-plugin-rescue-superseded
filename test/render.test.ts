@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { compareDiagnosis, renderDiagnosisReport } from './render.ts'
-import type { DiagnosisReportInput, PluginDiagnosis } from './render.ts'
+import { compareDiagnosis, renderDiagnosisReport } from '../src/report/render.ts'
+import type { DiagnosisReportInput, PluginDiagnosis } from '../src/report/render.ts'
 
 const foo: PluginDiagnosis = {
   plugin: '@community/foo-tools',

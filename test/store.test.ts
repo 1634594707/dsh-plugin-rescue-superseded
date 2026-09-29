@@ -15,8 +15,8 @@ import {
   recordFixFailure,
   renderUndoNote,
   STATE_SCHEMA,
-} from './store.ts'
-import type { AppliedRecord, IntentRecord } from './store.ts'
+} from '../src/state/store.ts'
+import type { AppliedRecord, IntentRecord } from '../src/state/store.ts'
 
 const intent: IntentRecord = {
   matrixId: 'BRK-2026-0142',
@@ -45,7 +45,7 @@ test('v1 carries no field the implementation has not landed', () => {
 test('the intent is the record before the user file moves', () => {
   const withIntent = beginIntent(emptyState(), intent)
   assert.deepEqual(withIntent.intents, [intent])
-  const applied = confirmApplied(withIntent, intent, ['/p/cordis.patch.yml.bak-20260929T030000Z'], '2026-09-29T03:00:05.000Z')
+  const applied = confirmApplied(withIntent, intent, ['/p/cordis.patch.yml.bak-20260929T030000Z'], false, '2026-09-29T03:00:05.000Z')
   assert.deepEqual(applied.intents, [])
   assert.equal(applied.applied.length, 1)
   assert.equal(applied.applied[0]?.matrixId, 'BRK-2026-0142')
@@ -65,13 +65,13 @@ test('diagnosis never spends the retry budget; failed fixes do', () => {
 })
 
 test('a missing backup stops the restore instead of guessing the original', () => {
-  const record: AppliedRecord = { matrixId: intent.matrixId, plugin: intent.plugin, harness: intent.harness, fixKind: 'config-patch', target: intent.target, before: { kind: 'config-patch', rowText: '- id: a\n', backupPath: '/b' }, backupPaths: ['/b'], appliedAt: 'now' }
+  const record: AppliedRecord = { matrixId: intent.matrixId, plugin: intent.plugin, harness: intent.harness, fixKind: 'config-patch', target: intent.target, before: { kind: 'config-patch', rowText: '- id: a\n', backupPath: '/b' }, backupPaths: ['/b'], created: false, appliedAt: 'now' }
   assert.deepEqual(planRestore(record, []), { action: 'backup-missing', missing: ['/b'] })
   assert.deepEqual(planRestore(record, ['/b']), { action: 'restore-backup', missing: [] })
   // F1 的逐字节等价只由 `.bak` 保证,结构化行文本不算备份
   assert.equal(planRestore({ ...record, backupPaths: [] }, []).action, 'backup-missing')
   // F0 与 F2 把原值记在 before 里,无备份也能写回
-  assert.equal(planRestore({ ...record, before: { kind: 'allow', priorEntry: null }, backupPaths: [] }, []).action, 'restore-before')
+  assert.equal(planRestore({ ...record, before: { kind: 'allow', key: '@community/foo-tools@1.4.2', priorEntry: null }, backupPaths: [] }, []).action, 'restore-before')
   assert.equal(planRestore({ ...record, before: { kind: 'manual' }, backupPaths: [] }, []).action, 'restore-before')
 })
 
@@ -89,12 +89,12 @@ test('ignored findings stay ignored for that plugin and harness only', () => {
 })
 
 test('undo.md names the file, the original value and the manual step', () => {
-  const applied: AppliedRecord = { matrixId: intent.matrixId, plugin: intent.plugin, harness: intent.harness, fixKind: 'patch', target: intent.target, before: intent.before, backupPaths: ['/b'], appliedAt: '2026-09-29T03:00:05.000Z' }
+  const applied: AppliedRecord = { matrixId: intent.matrixId, plugin: intent.plugin, harness: intent.harness, fixKind: 'patch', target: intent.target, before: intent.before, backupPaths: ['/b'], created: false, appliedAt: '2026-09-29T03:00:05.000Z' }
   const note = renderUndoNote(applied)
   assert.match(note, /安装前 dsh\.profile\.bundles: dsh-headless/)
   assert.match(note, /BRK-2026-0142/)
   assert.match(note, /手动还原/)
   assert.match(note, /不要猜测原值/)
-  assert.match(renderUndoNote({ ...applied, before: { kind: 'allow', priorEntry: null } }), /原本不存在该条目/)
+  assert.match(renderUndoNote({ ...applied, before: { kind: 'allow', key: '@community/foo-tools@1.4.2', priorEntry: null } }), /原本不存在该条目/)
   assert.match(renderUndoNote({ ...applied, before: { kind: 'config-patch', rowText: '- id: a\n  config:\n    keep: 1\n', backupPath: '/b' } }), /被覆盖的行原文/)
 })

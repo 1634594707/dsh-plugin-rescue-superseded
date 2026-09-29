@@ -4,10 +4,10 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { assertMatrixDocument, fixEligibility, harnessCovers, MATRIX_SCHEMA, MatrixValidationError, FAILURE_VOCABULARY } from './schema.ts'
-import type { MatrixDocument } from './schema.ts'
+import { assertMatrixDocument, fixEligibility, harnessCovers, MATRIX_SCHEMA, MatrixValidationError, FAILURE_VOCABULARY } from '../src/matrix/schema.ts'
+import type { MatrixDocument } from '../src/matrix/schema.ts'
 
-const seedPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../matrix/data/0.2-rc.json')
+const seedPath = path.join(path.dirname(fileURLToPath(import.meta.url)), './fixtures/matrix.json')
 const seedText = fs.readFileSync(seedPath, 'utf8')
 const seed = JSON.parse(seedText) as MatrixDocument
 
@@ -79,7 +79,8 @@ test('refuses an automatic fix for a category that is not auto-fixable', () => {
 test('duplicate ids and empty record sets are rejected', () => {
   assert.match(problemsFor(patched(1, { id: 'BRK-2026-0142' })).join('\n'), /duplicate id/)
   assert.match(problemsFor(patched(0, { id: 'broken-format' })).join('\n'), /must match BRK-YYYY-NNNN/)
-  assert.match(problemsFor({ ...JSON.parse(seedText), records: [] }).join('\n'), /records must be a non-empty array/)
+  assert.match(problemsFor({ ...JSON.parse(seedText), records: 'not-an-array' }).join('\n'), /records must be an array/)
+  assert.deepEqual(problemsFor({ ...JSON.parse(seedText), records: [] }), [])
 })
 
 test('an unknown schema version is refused, not downgraded', () => {

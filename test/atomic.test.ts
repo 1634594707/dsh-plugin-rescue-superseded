@@ -18,7 +18,7 @@ import {
   WRITE_RETRY_DELAY_MS,
   WRITE_RETRY_LIMIT,
   writeFileAtomically,
-} from './atomic.ts'
+} from '../src/write/atomic.ts'
 
 const FIRST = '2026-09-29T03:35:00.123Z'
 const SECOND = '2026-09-29T03:36:00.234Z'
