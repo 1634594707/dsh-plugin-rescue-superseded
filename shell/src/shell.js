@@ -356,7 +356,15 @@ function renderFindings(doctor) {
   clear(els.findings)
   if (!doctor) return
   if (doctor.diagnoses.length === 0) {
-    els.findings.append(el('div', 'empty', '没有需要处理的插件:该 profile 里没发现会被预检拦下、被禁用或没装上的项。'))
+    els.findings.append(
+      el(
+        'div',
+        'empty',
+        doctor.runtime.installed
+          ? '没有需要处理的插件:该 profile 里没发现会被预检拦下、被禁用或没装上的项。'
+          : '这一栏算不出结论:本机 runtime 没识别出来(宿主从源码 checkout 跑时就是这样),peer 判定没有比较对象。别把它当"没问题" —— 用「真启动采集症状」拿宿主的运行证据,或在插件市场页按对照版本判。',
+      ),
+    )
     return
   }
   for (const item of doctor.diagnoses) els.findings.append(findingCard(item, doctor))
@@ -415,7 +423,7 @@ els.capture.addEventListener('click', () => {
     const symptoms = await guard('真启动采集', () => invoke('capture', { profile, dsh: els.dsh.value.trim() || null, timeoutSeconds: 120, allowLive: els.allowLive.checked }))
     if (!symptoms) return
     log(`症状 ${symptoms.schema}:未激活条目 ${symptoms.entries.length} 条,退出码 ${symptoms.exitCode ?? '无'}`)
-    for (const entry of symptoms.entries) log(`  ${entry.module} ${entry.entryId ? `(${entry.entryId}) ` : ''}${{ pending: '等待服务', failed: '启动失败', skipped: '预检跳过' }[entry.state] ?? entry.state}${entry.missingServices.length ? `:${entry.missingServices.join(', ')}` : ''}${entry.detail ? ` —— ${entry.detail}` : ''}`, 'cmd')
+    for (const entry of symptoms.entries) log(`  ${entry.module} ${entry.entryId ? `(${entry.entryId}) ` : ''}${{ pending: '等待服务', failed: '启动失败', skipped: '预检跳过' }[entry.state] ?? entry.state}${entry.missingServices.length ? `:${entry.missingServices.join(', ')}` : ''}${entry.detail ? ` ${entry.detail}` : ''}`, 'cmd')
     for (const note of symptoms.notes) log(`  注:${note}`, 'cmd')
   })()
 })
