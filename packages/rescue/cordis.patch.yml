@@ -1,0 +1,30 @@
+# rescue 的 bundle 补丁层(§5.4)。
+#
+# 两行现在都 disabled:lib 里还没有 doctor / patcher 的插件入口,挂上去只会让 profile
+# 自己 PENDING —— 一个还没实现的入口不该进活路径。M1 按 roadmap 阶段 2 接线时逐行打开。
+#
+# 行按 id 被后层**整值覆盖**,不是深合并(patch 语言无 remove,vendor/include/src/index.ts)。
+# 因此本文件只放与部署无关的中性默认,任何改动都要整值复述当前 config。
+# offlineOnly 是 §10 Q13 的表决结果:默认出网,用户可切成只用缓存。
+# 缓存上限与份数按 §3.1:字节上限优先,单份超限拒收并回退上一份。
+
+- insert:
+    - id: rescue-doctor
+      name: '@dsh-rescue/rescue/doctor'
+      disabled: true
+      config:
+        matrix:
+          source: '@dsh-rescue/matrix'
+          cacheDir: '$DSH_HOME/plugin-rescue/matrix'
+          maxCacheBytes: 307200
+          retain: [current, previous]
+          maxAgeDays: 30
+          offlineOnly: false
+
+    - id: rescue-patcher
+      name: '@dsh-rescue/rescue/patcher'
+      disabled: true
+      config:
+        stateDir: '.plugin-rescue'
+        maxAttempts: 3
+        backupKeep: 3

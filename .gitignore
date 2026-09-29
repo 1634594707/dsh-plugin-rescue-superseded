@@ -1,0 +1,7 @@
+node_modules/
+lib/
+*.tgz
+*.tsbuildinfo
+pnpm-lock.yaml.bak
+.plugin-rescue/
+.DS_Store

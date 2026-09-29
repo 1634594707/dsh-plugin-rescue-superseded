@@ -1,0 +1,20 @@
+{
+  "name": "@dsh-rescue/matrix",
+  "version": "1.0.0",
+  "description": "dsh 社区插件失效知识库:纯数据,无代码、无 install script(§5.1)。",
+  "license": "MIT",
+  "files": [
+    "data",
+    "README.md"
+  ],
+  "exports": {
+    "./data/*": "./data/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "matrix": {
+      "schema": "rescue.matrix/v2",
+      "validator": "@dsh-rescue/rescue"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "@dsh-rescue/rescue",
+  "version": "0.1.0",
+  "description": "dsh 社区插件兼容修复系统本体:诊断器 + 补丁执行器,零新增运行时依赖。",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./matrix/schema": {
+      "types": "./lib/types/matrix/schema.d.ts",
+      "default": "./lib/matrix/schema.js"
+    },
+    "./matrix/cache": {
+      "types": "./lib/types/matrix/cache.d.ts",
+      "default": "./lib/matrix/cache.js"
+    },
+    "./report/redact": {
+      "types": "./lib/types/report/redact.d.ts",
+      "default": "./lib/report/redact.js"
+    },
+    "./report/render": {
+      "types": "./lib/types/report/render.d.ts",
+      "default": "./lib/report/render.js"
+    },
+    "./state/store": {
+      "types": "./lib/types/state/store.d.ts",
+      "default": "./lib/state/store.js"
+    },
+    "./write/atomic": {
+      "types": "./lib/types/write/atomic.d.ts",
+      "default": "./lib/write/atomic.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.4 <5.0.0",
+    "@deepseek-ai/cordis-plugin-include": ">=1.0.9 <2.0.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/cordis-plugin-include": "^1.0.9"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

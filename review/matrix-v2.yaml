@@ -1,0 +1,210 @@
+# dsh-rescue-matrix · schema 草案(v2)
+#
+# 相对方案附录 B 的 v1 草案补入 [findings.md](findings.md) B1–B4 的必需字段:
+#   · 双向记录(state: works | broken)          —— B2
+#   · 过期与撤回(expiresAt / retractedBy)       —— B1、B2
+#   · 预发布版本策略(prerelease)                —— B3
+#   · 受控词表(failure / detection)             —— B4
+#   · 修复前置条件(requires / restartRequired)  —— A5
+#   · 按需拉取与离线降级(delivery)               —— proposal §5.1、决策 6
+#
+# 本文件是数据声明,不是自由 YAML:未知枚举值一律拒绝入库,避免矩阵退化成无法校验的散文。
+schema: rescue.matrix/v2
+
+# 分发。本体不内置矩阵(体积约束 G6),按 harness 精确版本 + 通道拉取,只缓存当前与最近一份。
+# 关键约束:offline.degradeTo 列出的检测器**不读矩阵**,因此断网时诊断仍然可用,
+# 丢的只是 classification 与 fixes。矩阵一取不到不等于产品不可用。
+delivery:
+  mode: pull-on-demand
+  source:                         # 固定来源,不接受配置注入任意 URL
+    registry: npm
+    package: '@dsh-rescue/matrix'
+  verify: sha256                  # 拉取后必须校验
+  cacheDir: '$DSH_HOME/plugin-rescue/matrix'
+  cacheKey: 'harness-exact × channel × matrix-major'
+  retain: [current, previous]     # 只留两份,天然满足体积上限
+  maxCacheBytes: 307200           # 300 KB,见 proposal §3.1
+  maxAgeDays: 30                  # 超过则重新拉;离线时用旧的
+  offline:
+    degradeTo: [D1, D2, D3, D6]   # 仍可用:状态、缺失 key、导入失败、预检拒绝、提供者释放
+    lose: [classification, fixes] # 丢失:失效类别归属与修法
+    uiCopy: '需要联网获取修复建议 —— 离线不是插件没坏'   # proposal §5.6
+    # 完全离线模式:只用缓存,从不主动出网(见 proposal §10 Q13)
+    offlineOnly: false
+
+meta:
+  generatedFor: '0.2.0'          # 生成时的 harness 版本
+  updated: '2026-09-28'
+  # 预发布策略。harness 0.2.0-rc.1 会被 semver.satisfies(..., { includePrerelease: true })
+  # 匹配进 '>=0.2.0 <0.3.0'(app-boot/src/plugin-compatibility.ts:77),所以区间语义必须显式声明。
+  prerelease: 
+    # rc 是否落入 stable 区间。false 时 rc 需要独立的证据通道。
+    matchesStable: false
+    # rc 记录单独用哪些通道存放。
+    channels: [stable, rc]
+    # 诊断器在 rc 运行时对 stable 证据的处理。
+    onRcRuntime: downgrade-confidence   # inferred 而非 verified
+
+# 受控词表。任何未列出的值拒绝入库。
+vocabulary:
+  # 失效类别。相比方案 v1 的八类,补入 B4 的六类。
+  failure:
+    - id: false-block                # 预检误判,实际兼容                    → F0
+      detector: D1
+      autoFixable: true
+    - id: peer-range-stale           # 真不兼容,低成本绕过也无用            → 无自动修复(A3)
+      detector: D1
+      autoFixable: false
+      note: 豁免只解锁预检,不改变运行时行为
+    - id: config-schema-changed      # 症状是 failed fiber,不是行被禁用(A7)
+      detector: D3
+      autoFixable: true
+    - id: config-expression-broken   # !!js 表达式引用了已删服务,机器迁不动(A6)
+      detector: D3
+      autoFixable: false
+    - id: service-key-removed
+      detector: D2
+      autoFixable: true
+    - id: service-key-scope-mismatch # 服务存在但 isolate label 不同(B4)
+      detector: D2
+      autoFixable: false
+      note: 与 service-key-removed 症状相同,必须先排除再下 shim
+    - id: service-api-changed
+      detector: [D4, D5]
+      autoFixable: true
+    - id: event-contract-changed
+      detector: D4
+      autoFixable: true
+    - id: tool-api-changed
+      detector: [D4, D5]
+      autoFixable: true
+    - id: include-file-denied       # include 文件触到一个不兼容插件 → 整份消失(B4)
+      detector: D3
+      autoFixable: true
+    - id: bundle-skipped            # bundle 不兼容/不可读 → 贡献行全消失(B4)
+      detector: D3
+      autoFixable: true
+    - id: provider-disposed-runtime # 运行期提供者被释放 → 静默退回 PENDING(B1/D6)
+      detector: D6
+      autoFixable: true
+    - id: duplicate-package-instance # dsh 包被解析出第二份实例(B4)
+      detector: D4
+      autoFixable: false
+    - id: import-failed             # 无 fiber,归类 'failed to import'(B4)
+      detector: D3
+      autoFixable: false
+    - id: cordis-core-changed       # 一期非目标
+      detector: ~
+      autoFixable: false
+
+  # 指纹的受控词表。方案 v1 的 detection 是自由 YAML,无法机器校验。
+  detection:
+    pendingService:      # fiber.inject 中 ctx.get() 为 undefined 的 key
+    failedService:       # inject 满足但 fiber 失败
+    loadErrorCode:       # 与 PluginManager 的 ManagementFailure code 对齐
+    fiberState:          # pending | loading | failed | unloading | null
+    entryId:             # Loader entry id
+    moduleName:          # Loader entry.options.name
+    bundleName:          # 被 skip 的 bundle
+    includePath:         # 被整份否决的 include 文件
+    unresolvedImport:    # 静态扫描发现的、不存在于安装实例的具名导入
+    duplicateInstance:   # 同一 dsh 包在运行树中出现两个 module identity
+
+  # 修复手段。requires 描述 F2 shim 的四个前置条件(A5)。
+  fixKind:
+    allow:        { writes: compatibility.json, via: pluginManager.setVersionExemption, needsConsent: true }
+    config-patch: { writes: 'cordis.patch.yml', addressing: by-row-id, removeOpAvailable: false }
+    shim:         { writes: [package.json, pnpm-lock.yaml, dsh.profile.bundles], dryRun: cordis-host-runner }
+    codemod:      { status: proposed-drop }   # 见 findings.md B10
+    manual:       { writes: nothing }
+
+  # 置信度。方案 v1 三级不变,但补上 verified 的成立条件。
+  confidence:
+    verified:   needs: [runLogId, verifiedOn]
+    inferred:   needs: [typesDiffRefs]
+    reported:   needs: [reporter, reviewState]   # reviewState: unreviewed | accepted | rejected
+
+# 每条记录的字段契约
+record:
+  id:                 字符串,'BRK-YYYY-NNNN';撤回记录保留原 id
+  state:              works | broken              # B2:正向记录承载 false-block 的证据
+  harness:            区间,'预发布语义见 meta.prerelease'
+  plugin:             { name, versions }
+  failure:            vocabulary.failure 的 id
+  detection:          vocabulary.detection 的键值;同键多值表示命中其一
+  severity:           low | medium | high
+  confidence:         vocabulary.confidence 的 id
+  fix:
+    kind:             vocabulary.fixKind 的 id
+    ref:              仅 shim:包 specifier(含精确版本范围)
+    configMapping:    仅 config-patch:from → to;数组路径的映射语法须在实现时冻结
+  requires:           # 仅 shim;四项全为真才允许应用(B1 的守卫依据)
+    hmrEnabled: true
+    moduleResolves: true
+    preflightPasses: true
+    injectSatisfiable: true
+  restartRequired:    bool;true 时 fixer 直接给出重启提示,不承诺热生效(A5)
+  verifiedOn:         精确 harness 版本;confidence: verified 时必填
+  expiresAt:          矩阵区间终点;到期记录降级为 inferred(B2)
+  retractedBy:        记录 id 或官方修复版本;存在时 fixer 优先建议升级而非打 shim(B2)
+  supersededBy:       官方已修复的插件版本
+  notes:              自由文本
+  source:             issue / PR / types-diff 引用
+
+examples:
+  # 类别 1:预检误判,实测兼容 → 有依据豁免。正向记录 + 精确证据(B2)。
+  - id: BRK-2026-0087
+    state: broken
+    harness: '>=0.2.0 <0.3.0'
+    plugin: { name: '@community/quick-notify', versions: '1.0.0 - 1.3.9' }
+    failure: false-block
+    detection: { loadErrorCode: incompatible-version, moduleName: '@community/quick-notify' }
+    severity: low
+    confidence: verified
+    verifiedOn: '0.2.0-rc.1'
+    fix: { kind: allow }
+    notes: ['0.2.0 未触及 notify 相关 API,作者仅未更新 peer 范围']
+    source: '本地实测 2026-09-20'
+
+  # 类别 4:服务 key 删除 → shim。四个前置条件显式记录,含 restartRequired。
+  - id: BRK-2026-0142
+    state: broken
+    harness: '>=0.2.0 <0.3.0'
+    plugin: { name: '@community/foo-tools', versions: '<=1.4.2' }
+    failure: service-key-removed
+    detection: { pendingService: fooLegacy, fiberState: pending, moduleName: '@community/foo-tools' }
+    severity: high
+    confidence: verified
+    verifiedOn: '0.2.0-rc.1'
+    fix: { kind: shim, ref: 'dsh-rescue-shim-foo-legacy@^1.0.0' }
+    requires: { hmrEnabled: true, moduleResolves: true, preflightPasses: true, injectSatisfiable: true }
+    restartRequired: false
+    notes: ['0.2.0 将 ctx.fooLegacy 拆分为 ctx.foo 与 ctx.fooPolicy']
+    source: 'issue #123;types-diff 0.1.x→0.2.0'
+
+  # 会被官方修复取代的记录:命中时 fixer 应建议升级,不再挂 shim(B2 + B1 的关键防线)。
+  - id: BRK-2026-0155
+    state: broken
+    harness: '>=0.2.0 <0.3.0'
+    plugin: { name: '@community/bar-tools', versions: '<=2.0.0' }
+    failure: service-key-removed
+    detection: { pendingService: barLegacy }
+    severity: high
+    confidence: verified
+    verifiedOn: '0.2.0-rc.1'
+    fix: { kind: shim, ref: 'dsh-rescue-shim-bar-legacy@^1.0.0' }
+    requires: { hmrEnabled: true, moduleResolves: true, preflightPasses: true, injectSatisfiable: true }
+    supersededBy: '@community/bar-tools@2.1.0'
+    notes: ['2.1.0 起不再需要 shim;到该版本后本记录必须撤回或降级']
+    source: 'issue #131'
+
+  # 正向记录:已知可用,用于 false-block 的证据与"不要动它"的保护。
+  - id: OK-2026-0004
+    state: works
+    harness: '>=0.2.0 <0.3.0'
+    plugin: { name: '@community/quick-notify', versions: '>=1.4.0' }
+    severity: low
+    confidence: verified
+    verifiedOn: '0.2.0-rc.1'
+    notes: ['已更新 peer 范围,预检放行,功能实测正常']
+    source: '本地实测 2026-09-20'

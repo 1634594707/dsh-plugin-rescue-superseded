@@ -1,0 +1,22 @@
+{
+  "name": "dsh-plugin-rescue",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b packages/rescue",
+    "typecheck": "tsc -p packages/rescue --noEmit && tsc -p packages/rescue/tsconfig.test.json",
+    "test": "node --test \"packages/rescue/src/**/*.test.ts\"",
+    "check:manifest": "node scripts/check-manifest.mjs",
+    "check:size": "node scripts/check-size.mjs",
+    "demo": "node scripts/demo.mjs",
+    "gate": "pnpm run check:manifest && pnpm run build && pnpm run test && pnpm run check:size"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "schema": "rescue.matrix/v2",
+  "delivery": {
+    "mode": "pull-on-demand",
+    "source": { "registry": "npm", "package": "@dsh-rescue/matrix" },
+    "verify": "npm-provenance+schema-assert",
+    "cacheDir": "$DSH_HOME/plugin-rescue/matrix",
+    "cacheKey": "generatedFor(minor) x channel x matrix-major",
+    "retain": ["current", "previous"],
+    "maxCacheBytes": 307200,
+    "maxAgeDays": 30,
+    "oversizePolicy": "reject-and-keep-previous",
+    "offline": {
+      "degradeTo": ["D1", "D2", "D3", "D6"],
+      "lose": ["classification", "fixes"],
+      "uiCopy": "需要联网获取修复建议 —— 离线不是插件没坏",
+      "offlineOnly": false
+    }
+  },
+  "meta": {
+    "generatedFor": "0.2.0",
+    "updated": "2026-09-29",
+    "prerelease": {
+      "matchesStable": false,
+      "channels": ["stable", "rc"],
+      "onRcRuntime": "downgrade-confidence"
+    }
+  },
+  "records": [
+    {
+      "id": "OK-2026-0004",
+      "state": "works",
+      "harness": ">=0.2.0 <0.3.0",
+      "plugin": { "name": "@community/quick-notify", "versions": ">=1.4.0" },
+      "severity": "low",
+      "confidence": "verified",
+      "runLogId": "local-2026-09-20",
+      "verifiedOn": "0.2.0-rc.1",
+      "notes": ["已更新 peer 范围,预检放行,功能实测正常"],
+      "source": "本地实测 2026-09-20"
+    },
+    {
+      "id": "BRK-2026-0087",
+      "state": "broken",
+      "harness": ">=0.2.0 <0.3.0",
+      "plugin": { "name": "@community/quick-notify", "versions": "1.0.0 - 1.3.9" },
+      "failure": "false-block",
+      "detection": { "loadErrorCode": "incompatible-version", "moduleName": "@community/quick-notify" },
+      "severity": "low",
+      "confidence": "verified",
+      "runLogId": "local-2026-09-20",
+      "verifiedOn": "0.2.0-rc.1",
+      "fix": { "kind": "allow" },
+      "notes": ["0.2.0 未触及 notify 相关 API,作者仅未更新 peer 范围"],
+      "source": "本地实测 2026-09-20"
+    },
+    {
+      "id": "BRK-2026-0119",
+      "state": "broken",
+      "harness": ">=0.2.0 <0.3.0",
+      "plugin": { "name": "@community/multi-model-router", "versions": "<=2.1.0" },
+      "failure": "config-schema-changed",
+      "detection": { "loadErrorCode": "config.validation", "moduleName": "@community/multi-model-router" },
+      "severity": "medium",
+      "confidence": "inferred",
+      "typesDiffRefs": ["types-diff 0.1.x→0.2.0", "issue #98"],
+      "fix": {
+        "kind": "config-patch",
+        "addressing": "by-row-id",
+        "preserveExpressions": true,
+        "configMapping": [
+          { "from": "routes[].model", "to": "routes[].target" },
+          { "from": "fallbackModel", "to": null }
+        ]
+      },
+      "notes": ["含 !!js 表达式的字段不参与映射,原样保留并提示用户"],
+      "source": "types-diff 0.1.x→0.2.0;issue #98"
+    },
+    {
+      "id": "BRK-2026-0142",
+      "state": "broken",
+      "harness": ">=0.2.0 <0.3.0",
+      "plugin": { "name": "@community/foo-tools", "versions": "<=1.4.2" },
+      "failure": "service-key-removed",
+      "detection": { "pendingService": "fooLegacy", "fiberState": "pending", "moduleName": "@community/foo-tools" },
+      "severity": "high",
+      "confidence": "inferred",
+      "typesDiffRefs": ["types-diff 0.1.x→0.2.0", "issue #123"],
+      "fix": { "kind": "patch", "ref": "@dsh-rescue/patch-foo-legacy@^1.0.0" },
+      "requires": { "hmrEnabled": true, "moduleResolves": true, "preflightPasses": true, "injectSatisfiable": true },
+      "restartRequired": false,
+      "notes": ["0.2.0 将 ctx.fooLegacy 拆分为 ctx.foo 与 ctx.fooPolicy"],
+      "source": "issue #123;types-diff 0.1.x→0.2.0"
+    },
+    {
+      "id": "BRK-2026-0155",
+      "state": "broken",
+      "harness": ">=0.2.0 <0.3.0",
+      "plugin": { "name": "@community/bar-tools", "versions": "<=2.0.0" },
+      "failure": "service-key-removed",
+      "detection": { "pendingService": "barLegacy" },
+      "severity": "high",
+      "confidence": "inferred",
+      "typesDiffRefs": ["types-diff 0.1.x→0.2.0", "issue #131"],
+      "fix": { "kind": "patch", "ref": "@dsh-rescue/patch-bar-legacy@^1.0.0" },
+      "requires": { "hmrEnabled": true, "moduleResolves": true, "preflightPasses": true, "injectSatisfiable": true },
+      "restartRequired": false,
+      "supersededBy": "@community/bar-tools@2.1.0",
+      "notes": ["2.1.0 起不再需要补丁;到该版本后本记录必须撤回或降级"],
+      "source": "issue #131"
+    }
+  ]
+}
