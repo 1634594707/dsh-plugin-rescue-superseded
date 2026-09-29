@@ -215,7 +215,7 @@ export function renderUndoNote(record: AppliedRecord): string {
         : '本条为迁移指南,无落盘变更,无需还原'
   return [
     `## ${record.plugin} @ ${record.harness} —— ${record.fixKind}`,
-    `  矩阵记录: ${record.matrixId}`,
+    `  矩阵记录: ${record.matrixId === '' ? '(无,这条是你手动指定的)' : record.matrixId}`,
     `  目标: ${record.target}`,
     `  应用时间: ${record.appliedAt}`,
     `  ${original}`,

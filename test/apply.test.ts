@@ -130,6 +130,24 @@ test('undo deletes a compatibility.json that this run created, leaving no residu
   fs.rmSync(home, { recursive: true, force: true })
 })
 
+test('--dry-run must not touch the user file nor create a journal', async () => {
+  const home = makeHome()
+  const snapshot = readProfile(home, 'default')
+  const target = path.join(snapshot.dir, 'cordis.patch.yml')
+  const before = fs.readFileSync(target, 'utf8')
+  const output = await main(['fix', 'row', 'dsh-broken', '--disabled', 'false', '--home', home, '--profile', 'default', '--dry-run'])
+  assert.equal(output, 0)
+  assert.equal(fs.readFileSync(target, 'utf8'), before, '演练之后文件必须一个字节都没变')
+  assert.equal(fs.existsSync(path.join(snapshot.dir, '.dsh-rescue')), false, '演练不写 journal')
+  fs.rmSync(home, { recursive: true, force: true })
+})
+
+test('an unknown flag is rejected instead of silently ignored', async () => {
+  const home = makeHome()
+  await assert.rejects(() => main(['fix', 'row', 'dsh-broken', '--disabled', 'false', '--home', home, '--dry-runx']), /不认识开关 --dry-runx/)
+  fs.rmSync(home, { recursive: true, force: true })
+})
+
 test('a journal from an unknown schema blocks every write path instead of guessing', async () => {
   const home = makeHome()
   const snapshot = readProfile(home, 'default')

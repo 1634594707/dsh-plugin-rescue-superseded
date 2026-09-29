@@ -99,6 +99,9 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** 本工具自己创建的备份名形状:`<文件>.bak-<stamp>`。别人的备份一律不碰。 */
+const OWN_BACKUP = /^\.bak-\d{8}T\d{9}Z$/
+
 /**
  * 列出某文件的既有备份,由新到旧。
  *
@@ -107,13 +110,21 @@ async function sleep(ms: number): Promise<void> {
  */
 export async function listBackupPaths(filePath: string): Promise<string[]> {
   const dir = path.dirname(filePath)
-  const prefix = `${path.basename(filePath)}.bak-`
+  const base = path.basename(filePath)
   const names = await fs.readdir(dir)
-  return names.filter((name) => name.startsWith(prefix)).sort().reverse().map((name) => path.join(dir, name))
+  return names
+    .filter((name) => name.startsWith(base) && OWN_BACKUP.test(name.slice(base.length)))
+    .sort()
+    .reverse()
+    .map((name) => path.join(dir, name))
 }
 
 /**
- * 按保留策略淘汰旧备份。
+ * 按保留策略淘汰本工具留下的旧备份。
+ *
+ * 只匹配 `.bak-<stamp>` 这种由 `stampFor` 生成的名字:用户或桌面壳自己命名的备份
+ * (例如 `.bak-plugin-manager`、`.bak-1790252723757`)不是本工具的对象,按字典序排会把它们
+ * 误判成"最旧"删掉 —— 那份备份的来历我们无法重建。
  *
  * @param filePath 目标文件绝对路径
  * @param keep 保留几份,默认 3

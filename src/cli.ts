@@ -30,9 +30,21 @@ interface Parsed {
   readonly flags: Readonly<Record<string, string | boolean>>
 }
 
+/** 认识的开关。不在这里的直接报错:安全开关(`--dry-run`)拼错时静默忽略,等于把写动作当成演练。 */
+const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help'])
+
+/**
+ * @param name 去掉前缀的开关名
+ * @returns camelCase 形式,供代码读取
+ */
+function camel(name: string): string {
+  return name.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
+}
+
 /**
  * @param argv 参数(不含 node 与脚本)
  * @returns 命令、子命令、位置参数与开关
+ * @throws 出现不认识的双横线开关时抛出
  */
 export function parseArgv(argv: readonly string[]): Parsed {
   const flags: Record<string, string | boolean> = {}
@@ -44,11 +56,12 @@ export function parseArgv(argv: readonly string[]): Parsed {
       continue
     }
     const name = token.slice(2)
+    if (!FLAG_NAMES.has(name)) throw new Error(`不认识开关 --${name}。开关拼错不能静默忽略(尤其 --dry-run),--help 看全部可用开关。`)
     const next = argv[index + 1]
     if (next !== undefined && !next.startsWith('--')) {
-      flags[name] = next
+      flags[camel(name)] = next
       index++
-    } else flags[name] = true
+    } else flags[camel(name)] = true
   }
   const command = positional.shift() ?? 'help'
   const second = positional[0]
@@ -175,7 +188,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       const target = parsed.positional[0]
       const runtime = parsed.flags.runtime
       if (!target || typeof runtime !== 'string') throw new Error('fix exempt 需要 <package@version> 与 --runtime <精确版本>')
-      result = await applyExemption(snapshot, target, runtime, parsed.flags.revoke !== true, parsed.flags['accept-risk'] === true, state, options)
+      result = await applyExemption(snapshot, target, runtime, parsed.flags.revoke !== true, parsed.flags.acceptRisk === true, state, options)
     } else if (parsed.subject === 'row') {
       const rowId = parsed.positional[0]
       if (!rowId) throw new Error('fix row 需要补丁层里的行 id,例如:dsh-rescue fix row ui-settings-general')

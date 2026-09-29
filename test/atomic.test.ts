@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import syncFs from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -79,6 +80,25 @@ test('pruneBackups reports what it deleted and keeps the configured few', async 
   }
   assert.equal((await pruneBackups(target, 2)).length, 2)
   assert.equal((await listBackupPaths(target)).length, 2)
+})
+
+test('pruning never touches backups this tool did not create', async () => {
+  const dir = await tempDir()
+  const target = path.join(dir, 'cordis.patch.yml')
+  await fs.writeFile(target, 'now\n')
+  // 别的程序(桌面壳、用户手工)留下的备份:名字不是我们的 stamp 形状
+  await fs.writeFile(`${target}.bak-plugin-manager`, '别人的\n')
+  await fs.writeFile(`${target}.bak-1790252723757`, '别人的\n')
+  for (const stamp of ['2026-01-01T00:00:00.001Z', '2026-01-01T00:00:00.002Z', '2026-01-01T00:00:00.003Z', '2026-01-01T00:00:00.004Z']) {
+    await writeFileAtomically(target, `${stamp}\n`, { stamp })
+  }
+  assert.deepEqual((await listBackupPaths(target)).map((item) => path.basename(item)), [
+    'cordis.patch.yml.bak-20260101T000000004Z',
+    'cordis.patch.yml.bak-20260101T000000003Z',
+    'cordis.patch.yml.bak-20260101T000000002Z',
+  ])
+  assert.equal(syncFs.existsSync(`${target}.bak-plugin-manager`), true, '按字典序排会把非时间戳命名判成最旧 —— 那份备份的来历我们无法重建')
+  assert.equal(syncFs.existsSync(`${target}.bak-1790252723757`), true)
 })
 
 test('the snapshot is a content hash, not a length or a line count', async () => {
