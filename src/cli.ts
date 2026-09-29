@@ -9,13 +9,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import semver from 'semver'
 import { parse as parseYaml } from 'yaml'
 
 import { classify } from './analyze/classify.ts'
+import { assessPlugin, loadMarket, marketRows, renderMarket, upgradeCommand } from './analyze/market.ts'
+import type { MarketIndex } from './analyze/market.ts'
 import { renderSymptoms, runCapture } from './analyze/capture.ts'
 import { buildDiagnostic, renderDiagnostic } from './analyze/why.ts'
 import { listProfiles, readProfile, resolveHome } from './analyze/profile.ts'
 import { evaluateProfile } from './analyze/peers.ts'
+import { fetchManifest } from './analyze/surface.ts'
+import type { PackageManifest } from './analyze/surface.ts'
 import { assertMatrixDocument } from './matrix/schema.ts'
 import type { MatrixDocument } from './matrix/schema.ts'
 import { renderDiagnosisReport } from './report/render.ts'
@@ -34,7 +39,7 @@ interface Parsed {
 }
 
 /** 认识的开关。不在这里的直接报错:安全开关(`--dry-run`)拼错时静默忽略,等于把写动作当成演练。 */
-const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help', 'to', 'json', 'cache', 'out', 'dsh', 'timeout', 'allow-live', 'symptoms', 'prompt'])
+const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'offline', 'help', 'to', 'json', 'cache', 'out', 'dsh', 'timeout', 'allow-live', 'symptoms', 'prompt'])
 
 /**
  * @param name 去掉前缀的开关名
@@ -121,6 +126,37 @@ function pickProfile(flags: Readonly<Record<string, string | boolean>>, home: st
 }
 
 /**
+ * @param flags 命令行开关
+ * @param home dsh home
+ * @returns 缓存面与 manifest 的目录(`--cache` 可换走)
+ */
+function cacheDirFor(flags: Readonly<Record<string, string | boolean>>, home: string): string {
+  return typeof flags.cache === 'string' ? path.resolve(flags.cache) : path.join(home, '.dsh-rescue', 'cache')
+}
+
+/**
+ * @param cacheDir 缓存目录
+ * @returns 取某版本 package.json 的方法
+ */
+function manifestFetcher(cacheDir: string): (name: string, version: string) => Promise<PackageManifest | null> {
+  return (name, version) => fetchManifest(name, version, cacheDir)
+}
+
+/**
+ * @param flags 命令行开关
+ * @param home dsh home
+ * @returns 市场索引;拉不到且无缓存时为空(诊断不依赖它,§5.1 的分层)
+ */
+async function readMarket(flags: Readonly<Record<string, string | boolean>>, home: string): Promise<MarketIndex | null> {
+  try {
+    return await loadMarket({ cacheDir: path.join(home, '.dsh-rescue'), ...(flags.offline === true ? { offline: true } : {}) })
+  } catch (error) {
+    console.error(`市场索引没用上(${error instanceof Error ? error.message : String(error)});只按本机文件判,不报"作者已修"。`)
+    return null
+  }
+}
+
+/**
  * @param argv 参数
  * @returns 进程退出码
  */
@@ -131,6 +167,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   dsh-rescue profiles [--json]                           列出该 home 下的 profile
   dsh-rescue doctor [--home DIR] [--profile NAME] [--json]
                                                          分析(只读)
+  dsh-rescue market [--runtime VER] [--json] [--offline]
+                                                         已装插件 × 市场索引:作者修好了就升级,别打补丁
   dsh-rescue capture [--dsh PATH] [--prompt TEXT] [--timeout 秒] [--allow-live] [--json]
                                                          真启动一次,采集未激活条目与缺失服务
   dsh-rescue why <包名> [--to <官方版本>] [--symptoms 文件] [--json] [--cache DIR]
@@ -147,6 +185,11 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     return 0
   }
 
+  // --runtime 只在 market 与 fix exempt 上有意义:别的命令收下它却什么都不做,等于把"对照新版本"的意图悄悄丢掉。
+  if (parsed.flags.runtime !== undefined && parsed.command !== 'market' && !(parsed.command === 'fix' && parsed.subject === 'exempt')) {
+    throw new Error(`${parsed.command} 不用 --runtime。本机 runtime 从已装包算出;要问"官方出新版本后作者跟上没",用 dsh-rescue market --runtime <精确版本>。`)
+  }
+
   const home = resolveHome(typeof parsed.flags.home === 'string' ? parsed.flags.home : undefined)
 
   if (parsed.command === 'profiles') {
@@ -159,18 +202,33 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
   // 除 profiles 外都要先定位到一个 profile
   const snapshot = readProfile(home, pickProfile(parsed.flags, home))
   const offlineOnly = parsed.flags.offlineOnly === true
+  const cacheDir = cacheDirFor(parsed.flags, home)
+  // --offline 时连 manifest 也不出网:判不动就停在"有新版但未确认",不猜作者修没修。
+  const assessOptions = parsed.flags.offline === true ? {} : { manifest: manifestFetcher(cacheDir) }
 
   if (parsed.command === 'doctor') {
     const matrix = offlineOnly ? null : readMatrix('../matrix.json')
+    const market = await readMarket(parsed.flags, home)
     const evaluation = evaluateProfile(snapshot)
     const diagnoses = classify(snapshot, evaluation, matrix)
     const runtimeVersion = evaluation.runtimeVersion
-    const suggestions = runtimeVersion === null ? [] : evaluation.blocked.map((verdict) => ({
-      plugin: verdict.plugin,
-      version: verdict.version,
-      command: `dsh-rescue fix exempt ${verdict.plugin}@${verdict.version} --runtime ${runtimeVersion} --accept-risk`,
-      rootFix: `让作者放宽 ${verdict.gaps[0]?.peer ?? 'peer 范围'}`,
-    }))
+    const verdicts = market && runtimeVersion ? await Promise.all(evaluation.blocked.map((entry) => assessPlugin({ plugin: entry.plugin, installed: entry.version, runtime: runtimeVersion, market, blockedNow: true, ...assessOptions }))) : []
+    const byPlugin = new Map(verdicts.map((verdict) => [verdict.plugin, verdict]))
+    const suggestions = runtimeVersion === null ? [] : evaluation.blocked.map((entry) => {
+      const upstream = byPlugin.get(entry.plugin)
+      return {
+        plugin: entry.plugin,
+        version: entry.version,
+        upgrade:
+          upstream?.verdict === 'author-fixed'
+            ? { version: upstream.marketVersion, evidence: upstream.evidence, publishedAt: upstream.release?.publishedAt ?? null, note: upstream.releaseNote, command: upgradeCommand(snapshot.profile, entry.plugin) }
+            : null,
+        // 作者状态直接决定这一条是"升级"还是"要动手修",前端与文本都得同源显示。
+        market: upstream ? { verdict: upstream.verdict, version: upstream.marketVersion, updateAvailable: upstream.updateAvailable } : null,
+        command: `dsh-rescue fix exempt ${entry.plugin}@${entry.version} --runtime ${runtimeVersion} --accept-risk`,
+        rootFix: `让作者放宽 ${entry.gaps[0]?.peer ?? 'peer 范围'}`,
+      }
+    })
     if (parsed.flags.json === true) {
       console.log(JSON.stringify({
         profile: snapshot.profile,
@@ -188,6 +246,7 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
         },
         diagnoses,
         suggestions,
+        marketVerdicts: verdicts,
       }, null, 2))
       return 0
     }
@@ -203,7 +262,37 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     console.log(`已装 bundle ${snapshot.bundles.length} 个(其中官方 runtime ${evaluation.runtimeBundles.length} 个,不参与兼容性判定):peer 全满足 ${evaluation.compatible.length} 个,会被拦 ${evaluation.blocked.length} 个,已放行 ${evaluation.exempted.length} 个,没装上 ${evaluation.missingBundles.length} 个。`)
     if (matrix === null) console.log('矩阵没用上(分类可用,修法一栏需要矩阵或你显式批准)。')
     else if (matrix.records.length === 0) console.log(`矩阵已加载但 0 条记录:只报根因,不指认修法。`)
-    for (const suggestion of suggestions) console.log(`下一步:${suggestion.command}   (风险自负;正解是${suggestion.rootFix})`)
+    for (const suggestion of suggestions) {
+      if (suggestion.upgrade) {
+        console.log(`下一步:升级 ${suggestion.plugin} → ${suggestion.upgrade.version ?? '?'}(作者已修${suggestion.upgrade.publishedAt ? `,${suggestion.upgrade.publishedAt}` : ''}${suggestion.upgrade.evidence ? `;${suggestion.upgrade.evidence}` : ''})—— 不需要补丁或豁免`)
+        console.log(`  ${suggestion.upgrade.command}`)
+      } else {
+        if (suggestion.market?.verdict === 'still-broken') console.log(`作者未修:最新 ${suggestion.market.version ?? '?'} 的 peer 仍不覆盖当前 runtime,升级不解决问题。`)
+        if (suggestion.market?.verdict === 'upgrade-maybe') console.log(`市场有新版 ${suggestion.market.version ?? '?'},但新版 peer 是否覆盖还没确认 —— 可先试升级,再回来复诊。`)
+        console.log(`下一步:${suggestion.command}   (风险自负;正解是${suggestion.rootFix})`)
+      }
+    }
+    return 0
+  }
+
+  if (parsed.command === 'market') {
+    const market = await readMarket(parsed.flags, home)
+    if (market === null) return 1
+    const evaluation = evaluateProfile(snapshot)
+    const installedRuntime = evaluation.runtimeVersion
+    // --runtime 让"官方又发新版了,作者跟上没跟上"可以提前问,不必真把本机升上去。
+    const override = typeof parsed.flags.runtime === 'string' ? parsed.flags.runtime : null
+    if (override !== null && semver.valid(override) === null) throw new Error(`--runtime 要一个精确版本号(例如 0.2.0-rc.1),收到 ${override}`)
+    const runtime = override ?? installedRuntime
+    const targets = snapshot.installed.filter((entry) => !entry.name.startsWith('@deepseek-ai/dsh') && entry.name !== '@deepseek-ai/cordis')
+    const blockedNames = new Set(evaluation.blocked.map((entry) => entry.plugin))
+    const verdicts = await Promise.all(targets.map((entry) => assessPlugin({ plugin: entry.name, installed: entry.version, runtime, market, blockedNow: blockedNames.has(entry.name), ...assessOptions })))
+    const rows = marketRows(verdicts, snapshot.profile)
+    if (parsed.flags.json === true) console.log(JSON.stringify({ profile: snapshot.profile, runtime, installedRuntime, marketNotes: market.notes, rows }, null, 2))
+    else {
+      for (const note of market.notes) console.log(`注:${note}`)
+      console.log(renderMarket(rows, runtime === installedRuntime ? `本机 runtime ${runtime ?? '未识别'}` : `runtime ${runtime} · 本机装 ${installedRuntime ?? '未识别'}`))
+    }
     return 0
   }
 
@@ -241,7 +330,7 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     const symptomsPath = typeof parsed.flags.symptoms === 'string' ? path.resolve(parsed.flags.symptoms) : null
     const symptoms = symptomsPath === null ? null : (JSON.parse(fs.readFileSync(symptomsPath, 'utf8')) as { entries: readonly { module: string; missingServices: readonly string[] }[] })
     const evaluation = evaluateProfile(snapshot)
-    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, symptoms, ...(typeof parsed.flags.cache === 'string' ? { cacheDir: path.resolve(parsed.flags.cache) } : {}) })
+    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, symptoms, cacheDir, market: await readMarket(parsed.flags, home) })
     if (parsed.flags.json === true) console.log(JSON.stringify(bundle, null, 2))
     else {
       console.log(renderDiagnostic(bundle))
@@ -255,7 +344,7 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     if (!plugin) throw new Error('pr 需要插件包名,例如:dsh-rescue pr @michengai/dsh-archive-manager --to 0.2.0-rc.1')
     const target = typeof parsed.flags.to === 'string' ? parsed.flags.to : null
     const evaluation = evaluateProfile(snapshot)
-    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, ...(typeof parsed.flags.cache === 'string' ? { cacheDir: path.resolve(parsed.flags.cache) } : {}) })
+    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, cacheDir, market: await readMarket(parsed.flags, home) })
     const installed = snapshot.installed.find((entry) => entry.name === plugin)
     if (!installed) throw new Error(`解析不到 ${plugin}`)
     const packageJson = await fs.promises.readFile(path.join(installed.dir, 'package.json'), 'utf8')
@@ -269,9 +358,9 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     }
     console.log(`PR 草稿类别:${draft.kind};写在 ${draft.dir}`)
     for (const file of draft.files) console.log(`  ${file}`)
-    for (const proposal of draft.proposals.filter((item) => item.proposed !== null)) console.log(`  peer ${proposal.peer}: ${proposal.current} → ${proposal.proposed}`)
+    if (draft.kind !== 'no-action') for (const proposal of draft.proposals.filter((item) => item.proposed !== null)) console.log(`  peer ${proposal.peer}: ${proposal.current} → ${proposal.proposed}`)
     for (const note of draft.notes) console.log(`  注:${note}`)
-    console.log(draft.ghCommand === null ? '没有仓库地址,自己补 --repo 后按 PR.md 提。' : `材料备好了,发不发由你:\n  ${draft.ghCommand}`)
+    console.log(draft.ghCommand === null ? '没给 gh 命令:按上面的注,这次不该提 PR。' : `材料备好了,发不发由你:\n  ${draft.ghCommand}`)
     console.log('工具不 fork、不 push、不开 PR:往别人仓库里写东西必须由有权限的人明确发起。')
     return 0
   }

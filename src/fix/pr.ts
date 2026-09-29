@@ -10,6 +10,7 @@ import path from 'node:path'
 import semver from 'semver'
 import type { SemVer } from 'semver'
 
+import { upgradeCommand } from '../analyze/market.ts'
 import type { DiagnosticBundle } from '../analyze/why.ts'
 
 /** 一处 peer 提案。 */
@@ -155,8 +156,10 @@ export async function writePrDraft(bundle: DiagnosticBundle, packageJsonText: st
   const removed = bundle.gaps.filter((gap) => gap.status === 'removed')
   const proposals = proposePeers(bundle.peer.ranges, bundle.runtime.target, bundle.peer.gaps)
 
-  const kind: PrDraft['kind'] = removed.length > 0 ? 'needs-adapter' : proposals.some((item) => item.proposed !== null) ? 'peer-widen' : 'no-action'
-  if (kind === 'no-action' && bundle.runtime.target === null) notes.push('没给 --to:只出诊断包,不提改动建议')
+  const authorFixed = bundle.market?.verdict === 'author-fixed'
+  const kind: PrDraft['kind'] = authorFixed ? 'no-action' : removed.length > 0 ? 'needs-adapter' : proposals.some((item) => item.proposed !== null) ? 'peer-widen' : 'no-action'
+  if (authorFixed) notes.push(`作者已在 ${bundle.market?.marketVersion} 修好(最新版 peer 覆盖当前 runtime)—— 这篇 PR 不该提,让用户升级`)
+  if (kind === 'no-action' && !authorFixed && bundle.runtime.target === null) notes.push('没给 --to:只出诊断包,不提改动建议')
 
   await fs.mkdir(outDir, { recursive: true })
   const files: string[] = []
@@ -169,7 +172,7 @@ export async function writePrDraft(bundle: DiagnosticBundle, packageJsonText: st
   await write('diagnostic.json', `${JSON.stringify(bundle, null, 2)}\n`)
 
   const diff = peerDiff(packageJsonText, proposals)
-  if (diff !== '') await write('peer-dependencies.diff', diff)
+  if (diff !== '' && !authorFixed) await write('peer-dependencies.diff', diff)
 
   if (removed.length > 0) {
     const missingKeys = bundle.serviceKeys.filter((item) => item.status !== 'provided-both').map((item) => item.key)
@@ -193,6 +196,13 @@ export async function writePrDraft(bundle: DiagnosticBundle, packageJsonText: st
   const body = [
     `## 症状`,
     '',
+    ...(authorFixed
+      ? [
+        `**不需要这篇 PR**:市场索引显示作者已在 \`${bundle.market?.marketVersion}\` 修好 —— ${bundle.market?.evidence ?? '最新版 peer 覆盖当前 runtime'}${bundle.market?.releaseNote ? `;作者说明:\n> ${bundle.market.releaseNote}` : ''}。`,
+        `用户侧动作是升级:\`${upgradeCommand(bundle.profile, bundle.plugin.name)}\`(升级后重启该 profile;\`--profile\` 是 dsh plugin 的必需项)。`,
+        '',
+      ]
+      : []),
     `- ${bundle.plugin.name}@${bundle.plugin.version} 在 dsh ${bundle.runtime.installed ?? '未识别'} 下**被预检拦下**(peer 判定:${bundle.peer.verdict})。`,
     ...(bundle.peer.gaps.length > 0 ? bundle.peer.gaps.map((line) => `  - ${line}`) : []),
     ...(bundle.runtime.target ? [`- 对照目标版本 ${bundle.runtime.target} 做了公开面 diff。`] : []),
@@ -206,7 +216,11 @@ export async function writePrDraft(bundle: DiagnosticBundle, packageJsonText: st
     '',
     '## 建议改动',
     '',
-    proposals.some((item) => item.proposed !== null) ? '```diff\n' + diff + '```' : '无需改动 peer。',
+    authorFixed
+      ? '不改。作者已在新版里放宽了 peer,用户升级即可;这篇 PR 只会让两边各改一遍。'
+      : proposals.some((item) => item.proposed !== null)
+        ? '```diff\n' + diff + '```'
+        : '无需改动 peer。',
     '',
     '## 怎么复现与验证',
     '',
@@ -225,8 +239,10 @@ export async function writePrDraft(bundle: DiagnosticBundle, packageJsonText: st
   await write('PR.md', body)
 
   const repoName = repoSlug(repo)
-  const ghCommand = repoName === null ? null : `gh pr create --repo ${repoName} --title "fix: 放宽 dsh peer 范围以兼容 ${bundle.runtime.target ?? '新版'}" --body-file ${path.join(outDir, 'PR.md')}`
-  if (repoName === null) notes.push('package.json 里没有可认的 GitHub 仓库地址,未生成 gh 命令')
+  // 作者已修 ⇒ 不给 gh 命令:把"发不发由你"留给真需要改 peer 的插件。
+  const ghCommand = authorFixed ? null : repoName === null ? null : `gh pr create --repo ${repoName} --title "fix: 放宽 dsh peer 范围以兼容 ${bundle.runtime.target ?? '新版'}" --body-file ${path.join(outDir, 'PR.md')}`
+  if (authorFixed) notes.push('未生成 gh 命令:作者已修,提 PR 是重复劳动')
+  else if (repoName === null) notes.push('package.json 里没有可认的 GitHub 仓库地址,未生成 gh 命令')
 
   return { dir: outDir, files, kind, proposals, repo, ghCommand, notes }
 }

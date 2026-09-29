@@ -7,9 +7,11 @@
 
 import path from 'node:path'
 
+import { assessPlugin } from './market.ts'
 import { packageDir } from './profile.ts'
+import type { MarketIndex, MarketVerdict } from './market.ts'
 import { readPluginFace } from './imports.ts'
-import { fetchSurface, readLocalSurface } from './surface.ts'
+import { fetchManifest, fetchSurface, readLocalSurface } from './surface.ts'
 import type { ProfileSnapshot } from './profile.ts'
 import type { Evaluation } from './peers.ts'
 
@@ -43,6 +45,8 @@ export interface DiagnosticBundle {
   readonly serviceKeys: readonly ServiceKeyStatus[]
   readonly gaps: readonly DependencyGap[]
   readonly surfaces: { readonly specifier: string; readonly oldVersion: string; readonly newVersion: string; readonly oldSymbols: number; readonly newSymbols: number }[]
+  /** 市场对照:作者已修时,这里就是"不用再修"的证据。 */
+  readonly market?: MarketVerdict | null
   readonly notes: readonly string[]
 }
 
@@ -68,11 +72,11 @@ function candidatesFor(oldSymbols: readonly string[], newSymbols: readonly strin
  * @param snapshot profile 读取结果
  * @param evaluation peer 评估结果
  * @param plugin 插件包名
- * @param options `target` 目标官方版本、`cacheDir` 面缓存目录、`symptoms` 真启动采集到的症状
+ * @param options `target` 目标官方版本、`cacheDir` 面缓存目录、`symptoms` 真启动采集到的症状、`market` 市场索引
  * @returns 诊断包
  * @throws 插件在 profile 里解析不到
  */
-export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Evaluation, plugin: string, options: { target?: string | null; cacheDir?: string; symptoms?: { readonly entries: readonly { readonly module: string; readonly missingServices: readonly string[] }[] } | null } = {}): Promise<DiagnosticBundle> {
+export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Evaluation, plugin: string, options: { target?: string | null; cacheDir?: string; symptoms?: { readonly entries: readonly { readonly module: string; readonly missingServices: readonly string[] }[] } | null; market?: MarketIndex | null } = {}): Promise<DiagnosticBundle> {
   const installed = snapshot.installed.find((entry) => entry.name === plugin)
   if (!installed) {
     const names = snapshot.installed.map((entry) => entry.name).join(', ')
@@ -85,7 +89,7 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
   const surfaces: DiagnosticBundle['surfaces'] = []
   const oldProvided = new Set<string>()
   const newProvided = new Set<string>()
-  const cacheDir = options.cacheDir ?? path.join(snapshot.home, '.dsh-rescue', 'surfaces')
+  const cacheDir = options.cacheDir ?? path.join(snapshot.home, '.dsh-rescue', 'cache')
 
   const dshImports = face.imports.filter((entry) => entry.specifier.startsWith('@deepseek-ai/dsh'))
   for (const entry of dshImports) {
@@ -134,6 +138,8 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
 
   const blocked = evaluation.blocked.find((entry) => entry.plugin === plugin)
   const exempted = evaluation.exempted.find((entry) => entry.plugin === plugin)
+  const marketVerdict = options.market ? await assessPlugin({ plugin, installed: installed.version, runtime: evaluation.runtimeVersion, market: options.market, blockedNow: blocked !== undefined, manifest: (name, version) => fetchManifest(name, version, cacheDir) }) : null
+  if (marketVerdict?.verdict === 'author-fixed') notes.push(`市场对照:作者已在 ${marketVerdict.marketVersion} 修好 —— ${marketVerdict.evidence ?? '最新版 peer 覆盖当前 runtime'};升级即可,不必打补丁`)
   const peerRanges: Record<string, string> = {}
   const peerGaps: string[] = []
   for (const [peer, range] of Object.entries(installed.peerRanges)) {
@@ -157,6 +163,7 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
     serviceKeys,
     gaps: gaps.sort((a, b) => a.specifier.localeCompare(b.specifier) || a.symbol.localeCompare(b.symbol)),
     surfaces,
+    ...(marketVerdict ? { market: marketVerdict } : {}),
     notes,
   }
 }
@@ -189,6 +196,9 @@ export function renderDiagnostic(bundle: DiagnosticBundle, report: readonly stri
     if (key.status === 'observed-pending') lines.push(`  服务 key ${key.key}:真启动里插件卡在等它 —— 本 profile 内没有 provider(有运行证据)`)
     else if (key.status === 'provided-old-only') lines.push(`  服务 key ${key.key}:旧版包里有 provider,新版没找到`)
     else lines.push(`  服务 key ${key.key}:比对过的包里都没找到 provider(可能由没纳入比对的包提供,未验证)`)
+  }
+  if (bundle.market) {
+    lines.push(`市场对照:${bundle.market.headline}${bundle.market.marketVersion ? ` —— 最新 ${bundle.market.marketVersion}` : ''}${bundle.market.evidence ? `;依据:${bundle.market.evidence}` : ''}`)
   }
   for (const note of bundle.notes) lines.push(`注:${note}`)
   return `${lines.join('\n')}\n`

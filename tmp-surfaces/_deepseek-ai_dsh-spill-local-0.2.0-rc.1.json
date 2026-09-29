@@ -1,1 +1,0 @@
-{"package":"@deepseek-ai/dsh-spill-local","version":"0.2.0-rc.1","subpaths":[".","./package.json","./src/*"],"symbols":["DEFAULT_ROOT_PREFIX","LocalSpillStore","discoverDefaultRoots","encodeSegment","gatherSweepRoots","isErrno","privateRoot","saveTextFile","sessionDir","sweepSpillRoots"],"providedKeys":[]}

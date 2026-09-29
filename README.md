@@ -18,17 +18,21 @@ dsh-rescue doctor --profile desktop
     排除: 放宽 peer 也救不了:@deepseek-ai/dsh-client-runtime 本机没装
     可用修复: F0 显式豁免该精确版本 [写入 compatibility.json]
               | F4 让作者放宽 peer 范围 [查看]
-下一步:dsh-rescue fix exempt @michengai/dsh-archive-manager@0.1.44 --runtime 0.1.7-rc.2 --accept-risk
+
+已装 bundle 10 个(其中官方 runtime 2 个,不参与兼容性判定):peer 全满足 7 个,会被拦 1 个,已放行 0 个,没装上 0 个。
+下一步:升级 @michengai/dsh-archive-manager → 1.0.7(作者已修,2026-09-28T13:26:50Z;最新 1.0.7 的 17 个 dsh peer 全部覆盖 0.1.7-rc.2)—— 不需要补丁或豁免
+  dsh plugin --profile desktop update @michengai/dsh-archive-manager
 ```
 
-上面这段是对本机 `~/.dsh/profiles/desktop` 的真实读取结果:10 个 bundle 里 7 个 peer 全满足、1 个会被预检拦下、2 个是官方 runtime 不参与判定。
+上面这段是对本机 `~/.dsh/profiles/desktop` 的真实读取结果:10 个 bundle 里 7 个 peer 全满足、1 个会被预检拦下、2 个是官方 runtime 不参与判定 —— 而被拦下的那个,作者已经在 1.0.7 修好,所以这条 `doctor` 给的是升级命令,不是豁免命令。
 
 ## 命令
 
 | 动作 | 做什么 | 落盘 |
 |---|---|---|
 | `profiles [--json]` | 列该 home 下带 `package.json` 的 profile | 无 |
-| `doctor [--home DIR] [--profile NAME] [--json]` | 按宿主的门禁语义(`@deepseek-ai/dsh*` peer,带 `includePrerelease`)算谁会预检禁用;读补丁层的显式禁用行;读 `compatibility.json` 的已放行条目;用 `matrix.json` 给已知修法 | 无 |
+| `doctor [--home DIR] [--profile NAME] [--json]` | 按宿主的门禁语义(`@deepseek-ai/dsh*` peer,带 `includePrerelease`)算谁会预检禁用;读补丁层的显式禁用行;读 `compatibility.json` 的已放行条目;用 `matrix.json` 给已知修法;对每个被拦的插件问一次市场索引 | 无 |
+| `market [--runtime VER] [--json] [--offline]` | 已装社区插件 × 市场索引(`awesome-dsh-plugin.com` 的 `plugins.json` + `updates.json`,缓存 24 小时):取市场最新版的 `package.json`,用宿主同款判据问"作者跟上没有"。`--runtime` 让你提前问"官方出新版会怎样",不必真升本机 | `$(home)/.dsh-rescue/market/`、`cache/`(工具自己的缓存) |
 | `capture [--dsh PATH] [--timeout 秒] [--allow-live]` | 真启动一次 dsh,把"哪个条目没起来、在等哪个服务"采成 `rescue.symptoms/v1`。默认拒绝在你的默认 home 上启动 | 无(由 dsh 自己写 session/日志) |
 | `why <包名> [--to <官方版本>] [--symptoms 文件] [--json]` | 插件的具名 import 面 × 新旧官方公开面(旧面读本机已装包,新面 `npm pack` 目标版本并缓存);给了症状就把"缺 provider"从猜测升成运行证据 | 无 |
 | `pr <包名> --to <官方版本> [--out DIR]` | 诊断包 → PR 材料:`peer-dependencies.diff`、`PR.md`、`diagnostic.json`、可认仓库时给一条 `gh pr create` 命令 | `pr-out/`(工具目录) |
@@ -39,9 +43,11 @@ dsh-rescue doctor --profile desktop
 
 `--dry-run` 对所有写动作可用:算出将要写什么、登记意图,但不碰用户文件。`--json` 时 stdout 只有 JSON,提示走 stderr —— 桌面壳就靠这条边界复用同一个内核。
 
-## 四条不变量
+## 五条不变量
 
-**默认只读。** `doctor` 与 `status` 不写任何东西;写动作必须点名 `fix` 或 `undo`,而豁免还必须带 `--accept-risk`(与宿主 `setProfileVersionExemption` 同判据)。
+**先问作者修没修,再谈打补丁。** 市场索引里最新版的 peer 覆盖判定用的 runtime ⇒ 结论是"升级即可",工具不给这条插件写豁免、不生成 PR 材料、也不给 `gh pr create` 命令 —— 替一个已经被作者修好的插件打补丁,是在给社区制造重复劳动。反过来,最新版亲手写的范围就不覆盖 ⇒ 明说"升级不解决问题",不含糊成"可以考虑升级"。结论句由内核算(`analyze/market.ts`),壳只涂颜色。
+
+**默认只读。** `doctor`、`market` 与 `status` 不写任何用户文件;写动作必须点名 `fix` 或 `undo`,而豁免还必须带 `--accept-risk`(与宿主 `setProfileVersionExemption` 同判据)。
 
 **写了要确认生效。** 每次写完重读文件,核对那一行或那个键确实是预期值 —— 宿主的 `applyEntryPatches` 匹配不到目标只 warn 后跳过,「没报错」不等于「改对了」。核对不过就报错,并说明文件现在是什么状态、下次启动会怎样。
 
@@ -49,12 +55,13 @@ dsh-rescue doctor --profile desktop
 
 **证据不唯一就不指认。** peer 范围解析不了、豁免条目对不上当前 runtime、矩阵没有覆盖该区间的记录 —— 这些都只报观察到的事实与根因,不推荐自动修法。`matrix.json` 目前是空的,所以 `doctor` 只给分类与「让作者放宽范围」这一条,不会替你冒风险。
 
-## 实测到的四条(都在这台机器上跑出来,不是推断)
+## 实测到的五条(都在这台机器上跑出来,不是推断)
 
 1. **`^0.2.0` 和 `>=0.2.0` 都不放行 `0.2.0-rc.1`**,即使带 `includePrerelease: true`(宿主同款判据)。所以 `pr` 生成的建议范围是 `>=0.2.0-0 <0.3.0` —— 给作者提 `^0.2.0` 等于提一个仍然被拦的 PR。
 2. **可选条目未激活不写 `startup-*.log`,只打一行警告**。实测两次:`dsh: warning: 1 entry did not activate` + `… pending (waiting for service: webServer)`,而 `logs/` 里什么都没有 —— 所以 `capture` 解析的是启动摘要,报告文件只是顺带。
 3. **"peer 过了"不等于"能用"**。npm 上的 `@michengai/dsh-archive-manager` 已经出到 1.0.7 并把 peer 放宽到含 `0.2.0-rc.1`;真启动后它不再被拦,而是卡在等一个 headless profile 里根本没有的 `webServer`。同一个插件,失效种类从 `peer-range-stale` 变成缺 provider —— 这正是静态分析与真启动必须分工的原因。
 4. **判据不能搬到 Rust 去算**:Rust 的 `semver` crate 对真实插件写的 `0.1.0-rc.8 || 0.1.1-rc.2 || …` 是 16/16 解析失败,而宿主的门禁就是 node-semver。壳只渲染,内核留在 JS。
+5. **社区插件的"没人修"多半是"没人升级"**。本机 `desktop` profile 的 8 个社区插件,市场索引全部有更新版;拿 0.2.0-rc.1 逐个判,7 个的作者已经把 peer 放宽到覆盖(archive-manager 1.0.7 的 17 个 dsh peer 全覆盖,作者说明原话是"可以用在 DSH 0.2.0-rc.1 上"),只有 `dsh-better-reasoning-effort` 0.5.0 的上限还停在 `^0.1.7-rc.1` —— 那才是真需要提 PR 的一条。
 
 ## 排演一个新版本(不碰你的 profile)
 
@@ -81,11 +88,12 @@ src/
   analyze/profile.ts  读 profile:bundle 清单、runtime 版本、补丁层、豁免文件(目录与 junction 都认)
   analyze/peers.ts    按宿主的门禁语义判 peer
   analyze/classify.ts 观察 → 失效类别 → 诊断行
+  analyze/market.ts   市场对照:索引缓存/离线退回、作者最新版 peer 判定、结论句与升级命令
   fix/apply.ts        F0 / F1 的落盘装备:意图先行 → .bak → .tmp+rename → 重读确认 → applied
   matrix/schema.ts    rescue.matrix/v2 的受控词表与字段校验(未知枚举值拒绝入库)
   report/render.ts    确定性排序的报告输出:同一 profile 两次跑,输出逐字节相同
   state/store.ts      rescue.state/v1:意图、before、尝试计数、还原判定、undo.md
-test/                 37 项:profile 读取、peer 判定、写盘与还原、备份缺失不猜、只读姿态拒绝写
+test/                 70 项:profile 读取、peer 判定、市场对照与缓存、argv 闸门、写盘与还原、备份缺失不猜、只读姿态拒绝写
 matrix.json           已知失效知识库(受控词表在 src/matrix/schema.ts)
 ```
 
@@ -93,7 +101,7 @@ matrix.json           已知失效知识库(受控词表在 src/matrix/schema.ts
 
 ```sh
 pnpm install
-pnpm run gate                                                   # typecheck(含测试)→ build → 37 项测试
+pnpm run gate                                                   # typecheck(含测试)→ build → 70 项测试
 node src/cli.ts doctor --profile desktop                        # Node 24 直接跑源码,不必先 build
 node lib/cli.js fix row <行 id> --disabled false --profile ...   # 或跑构建产物
 ```
