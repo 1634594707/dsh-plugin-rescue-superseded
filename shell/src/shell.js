@@ -3,38 +3,79 @@ const { invoke } = window.__TAURI__.core
 const els = {
   profile: document.querySelector('#profile'),
   target: document.querySelector('#target'),
+  offline: document.querySelector('#offline'),
+  refresh: document.querySelector('#refresh'),
   dsh: document.querySelector('#dsh'),
   allowLive: document.querySelector('#allowLive'),
   capture: document.querySelector('#capture'),
-  refresh: document.querySelector('#refresh'),
+  verdict: document.querySelector('#verdict'),
+  market: document.querySelector('#market'),
   summary: document.querySelector('#summary'),
-  body: document.querySelector('#findings tbody'),
+  findings: document.querySelector('#findings'),
   journal: document.querySelector('#journal'),
-  log: document.querySelector('#log'),
+  logBody: document.querySelector('#logBody'),
+  logClear: document.querySelector('#logClear'),
 }
 
-const state = { doctor: null, status: null }
+const tabs = {
+  market: { button: document.querySelector('#tab-market'), view: document.querySelector('#view-market') },
+  doctor: { button: document.querySelector('#tab-doctor'), view: document.querySelector('#view-doctor') },
+  journal: { button: document.querySelector('#tab-journal'), view: document.querySelector('#view-journal') },
+}
+
+const state = { doctor: null, market: null, status: null, view: 'market' }
+
+/**
+ * @param {string} tag 标签名
+ * @param {string} [cls] class
+ * @param {string|number} [text] 文本内容;一律走 textContent,第三方文本不当标记解析
+ * @returns {HTMLElement} 新节点
+ */
+function el(tag, cls, text) {
+  const node = document.createElement(tag)
+  if (cls) node.className = cls
+  if (text !== undefined) node.textContent = String(text)
+  return node
+}
+
+/**
+ * @param {string} text 文案
+ * @param {string} [cls] 按钮样式
+ * @param {() => void} onClick 行为
+ * @returns {HTMLButtonElement} 按钮
+ */
+function button(text, cls, onClick) {
+  const node = el('button', cls)
+  node.type = 'button'
+  node.textContent = text
+  node.addEventListener('click', onClick)
+  return node
+}
+
+/**
+ * @param {HTMLElement} node 要清空的容器
+ */
+function clear(node) {
+  node.replaceChildren()
+}
 
 /**
  * @param {string} text 一行日志
  * @param {string} [kind] `err` 标红,`cmd` 标灰
  */
 function log(text, kind) {
-  const line = document.createElement('div')
-  line.className = `entry${kind ? ` ${kind}` : ''}`
-  line.textContent = text
-  els.log.append(line)
-  els.log.scrollTop = els.log.scrollHeight
+  els.logBody.append(el('div', `entry${kind ? ` ${kind}` : ''}`, text))
+  els.logBody.scrollTop = els.logBody.scrollHeight
 }
 
 /**
  * 包住一次调用:失败进日志,成功返回值。
  *
  * @param {string} label 动作名
- * @param {() => Promise<unknown>} call 实际调用
- * @returns {Promise<unknown>} 失败时为空
+ * @param {() => Promise<any>} call 实际调用
+ * @returns {Promise<any>} 失败时为空
  */
-async function call(label, call) {
+async function guard(label, call) {
   try {
     return await call()
   } catch (error) {
@@ -43,13 +84,25 @@ async function call(label, call) {
   }
 }
 
+/**
+ * @param {string} name `market` | `doctor` | `journal`
+ */
+function showView(name) {
+  state.view = name
+  for (const [key, tab] of Object.entries(tabs)) {
+    const active = key === name
+    tab.view.hidden = !active
+    tab.button.setAttribute('aria-selected', String(active))
+  }
+}
+
 /** @returns {Promise<void>} 拉 profile 列表 */
 async function loadProfiles() {
-  const data = await call('列 profile', () => invoke('profiles'))
+  const data = await guard('列 profile', () => invoke('profiles'))
   if (!data) return
-  els.profile.innerHTML = ''
+  clear(els.profile)
   for (const name of data.profiles) {
-    const option = document.createElement('option')
+    const option = el('option')
     option.value = name
     option.textContent = name
     els.profile.append(option)
@@ -58,52 +111,141 @@ async function loadProfiles() {
   log(`home ${data.home} · profile ${data.profiles.join(', ') || '无'}`, 'cmd')
 }
 
-/** @returns {Promise<void>} 体检 + journal */
-async function refresh() {
-  const profile = els.profile.value
-  if (!profile) return
-  const [doctor, status] = await Promise.all([
-    call('体检', () => invoke('doctor', { profile })),
-    call('读 journal', () => invoke('status', { profile })),
-  ])
-  state.doctor = doctor
-  state.status = status
-  renderSummary(doctor)
-  renderRows(doctor)
-  renderJournal(status)
+/**
+ * @param {string} command 要抄给用户/剪贴板的命令
+ * @returns {HTMLElement} 可选中代码 + 复制按钮
+ */
+function commandRow(command) {
+  const wrap = el('span', 'actions')
+  wrap.append(el('code', 'command', command))
+  wrap.append(
+    button('复制', '', () => {
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(command)
+          log(`已复制:${command}`, 'cmd')
+        } catch {
+          log(`剪贴板用不了,手动抄:${command}`, 'err')
+        }
+      })()
+    }),
+  )
+  return wrap
+}
+
+/**
+ * 结论句由内核给(判据与文案同源);壳只决定它涂成什么颜色。
+ *
+ * @param {string} verdict 内核的机器可读结论
+ * @returns {string} 徽标色调
+ */
+function toneOf(verdict) {
+  if (verdict === 'author-fixed') return 'ok'
+  return verdict === 'still-broken' ? 'bad' : 'warn'
+}
+
+/**
+ * @param {any} market 市场对照结果
+ * @param {any} doctor 本机诊断(只用来报"当前被拦几个")
+ */
+function renderVerdict(market, doctor) {
+  clear(els.verdict)
+  if (!market) {
+    els.verdict.append(el('strong', '', '市场对照没跑起来:看下面的动作记录;本机诊断不依赖它。'))
+    return
+  }
+  const counts = new Map()
+  for (const row of market.rows) counts.set(row.verdict, (counts.get(row.verdict) ?? 0) + 1)
+  const unconfirmed = (counts.get('upgrade-maybe') ?? 0) + (counts.get('unknown') ?? 0) + (counts.get('not-in-market') ?? 0)
+  els.verdict.append(
+    el('strong', '', `本机 ${market.rows.length} 个社区插件;当前被预检拦下 ${doctor?.counts?.blocked ?? '?'} 个。`),
+    el(
+      'span',
+      'line',
+      `对照 runtime ${market.runtime ?? '未识别'}(本机装 ${market.installedRuntime ?? '未识别'}):作者已修 ${counts.get('author-fixed') ?? 0} 个、仍未修 ${counts.get('still-broken') ?? 0} 个、未确认 ${unconfirmed} 个。顺序是硬的 —— 作者已修就升级,不给已修好的插件打补丁或提 PR。`,
+    ),
+  )
+  const list = el('ul')
+  for (const row of market.rows.filter((entry) => entry.verdict !== 'author-fixed')) list.append(el('li', '', `${row.plugin} ${row.installed} → ${row.marketVersion ?? '?'}:${row.headline}${row.evidence ? `;${row.evidence}` : ''}`))
+  if (list.childNodes.length > 0) els.verdict.append(list)
+  for (const note of market.marketNotes) els.verdict.append(el('span', 'line', `注:${note}`))
+}
+
+/**
+ * @param {any} row 一条市场结论
+ * @param {any} doctor 本机诊断(用来给"仍未修"的插件挂上动作)
+ * @returns {HTMLElement} 卡片
+ */
+function marketCard(row, doctor) {
+  const card = el('article', 'card')
+  const head = el('div', 'card-head')
+  head.append(el('span', 'name', row.plugin))
+  const versions = el('span', 'versions')
+  versions.append(el('span', '', `${row.installed} → `), el('span', 'to', row.marketVersion ?? '?'))
+  head.append(versions)
+  const badge = el('span', 'badge', row.headline)
+  badge.dataset.tone = toneOf(row.verdict)
+  head.append(badge, el('span', 'spacer'))
+  head.append(el('span', 'spacer'))
+  const meta = []
+  if (row.downloads !== null) meta.push(`下载 ${row.downloads.toLocaleString('en-US')}`)
+  if (row.category) meta.push(row.category)
+  if (row.inMarket && row.release?.publishedAt) meta.push(`作者发布 ${row.release.publishedAt.slice(0, 10)}`)
+  head.append(el('span', 'meta', meta.join(' · ')))
+  card.append(head)
+
+  if (row.evidence) card.append(el('span', 'line', `依据:${row.evidence}`))
+  if (row.releaseNote) card.append(el('blockquote', 'quote', row.releaseNote))
+  if (row.redLines?.length) card.append(el('span', 'redline', `能力红线:${row.redLines.join(', ')}`))
+
+  const actions = el('div', 'actions')
+  if (row.upgrade) actions.append(commandRow(row.upgrade))
+  else if (row.verdict === 'author-fixed') actions.append(el('span', 'line', '不用动作:本机版本已覆盖当前 runtime。'))
+  if (row.verdict !== 'author-fixed') {
+    actions.append(
+      button('看诊断', 'primary', () => {
+        showView('doctor')
+        void runWhy(row.plugin, doctor)
+      }),
+    )
+  }
+  card.append(actions)
+  return card
 }
 
 /**
  * @param {any} doctor 体检结果
  */
-function renderSummary(doctor) {
-  if (!doctor) return
-  const chips = [
-    `runtime <b>${doctor.runtime.installed ?? '未识别'}</b>`,
-    `对照 <b>${els.target.value}</b>`,
-    `bundle <b>${doctor.counts.bundles}</b>(官方 runtime ${doctor.counts.runtime})`,
-    `peer 全满足 <b>${doctor.counts.compatible}</b>`,
-    `会被预检拦下 <b>${doctor.counts.blocked}</b>`,
-    `已写豁免 <b>${doctor.counts.exempted}</b>`,
-    `没装上 <b>${doctor.counts.missing}</b>`,
-    doctor.matrixAvailable ? `矩阵 ${doctor.matrixRecords ?? 0} 条记录${doctor.matrixRecords ? '' : '(只报根因,不指认修法)'}` : '矩阵没用上:只报根因,不指认修法',
-  ]
-  els.summary.innerHTML = chips.map((chip) => `<span class="chip">${chip}</span>`).join('')
+function renderMarket(doctor) {
+  clear(els.market)
+  renderVerdict(state.market, doctor)
+  if (!state.market) {
+    els.market.append(el('div', 'empty', '市场索引没用上 —— 离线且无缓存时只会这样;本机诊断、豁免、PR 材料都不受影响。'))
+    return
+  }
+  for (const row of state.market.rows) els.market.append(marketCard(row, doctor))
 }
 
 /**
- * @param {string} text 文案
- * @param {string} cls 按钮样式
- * @param {() => void} onClick 行为
- * @returns {HTMLButtonElement} 按钮
+ * @param {any} doctor 体检结果
  */
-function button(text, cls, onClick) {
-  const element = document.createElement('button')
-  element.type = 'button'
-  element.className = cls
-  element.textContent = text
-  element.addEventListener('click', onClick)
-  return element
+function renderChips(doctor) {
+  clear(els.summary)
+  if (!doctor) return
+  const chips = [
+    ['runtime', doctor.runtime.installed ?? '未识别'],
+    ['bundle', `${doctor.counts.bundles}(官方 runtime ${doctor.counts.runtime})`],
+    ['peer 全满足', doctor.counts.compatible],
+    ['会被预检拦下', doctor.counts.blocked],
+    ['已写豁免', doctor.counts.exempted],
+    ['没装上', doctor.counts.missing],
+    ['矩阵', doctor.matrixAvailable ? `${doctor.matrixRecords} 条记录` : '没用上:只报根因'],
+  ]
+  for (const [label, value] of chips) {
+    const chip = el('span', 'chip')
+    chip.append(document.createTextNode(`${label} `), el('b', '', value))
+    els.summary.append(chip)
+  }
 }
 
 /**
@@ -115,118 +257,162 @@ function button(text, cls, onClick) {
 function twoStep(label, run) {
   void (async () => {
     log(`${label}:先做预览(不写盘)…`, 'cmd')
-    const preview = await call(`${label} 预览`, () => run(false))
+    const preview = await guard(`${label} 预览`, () => run(false))
     if (!preview) return
     log(`预览:${preview.message}`)
-    const ok = button('确认执行', 'primary', () => {
+    const confirm = button('确认执行', 'primary', () => {
       void (async () => {
-        const done = await call(label, () => run(true))
+        const done = await guard(label, () => run(true))
         if (!done) return
         log(`${label}:${done.message}`)
         await refresh()
       })()
     })
-    els.log.prepend(ok)
-    els.log.prepend(document.createTextNode(' '))
+    els.logBody.prepend(confirm)
+    els.logBody.prepend(el('span', 'entry cmd', `${label} 已预览 —— `))
   })()
+}
+
+/**
+ * @param {string} plugin 插件包名
+ * @param {any} doctor 体检结果
+ * @returns {Promise<void>} 面 diff 结果写进日志
+ */
+async function runWhy(plugin, doctor) {
+  if (!doctor) return
+  const bundle = await guard('面 diff', () => invoke('why', { profile: doctor.profile, plugin, target: els.target.value }))
+  if (!bundle) return
+  log(`面 diff ${plugin}@${bundle.plugin.version}:覆盖 ${bundle.surfaces.length} 个官方包;消失的依赖 ${bundle.gaps.filter((gap) => gap.status === 'removed').length} 处;peer 判定 ${bundle.peer.verdict}`)
+  for (const note of bundle.notes) log(`  注:${note}`, 'cmd')
+  for (const surface of bundle.surfaces) log(`  ${surface.specifier} ${surface.oldVersion}(${surface.oldSymbols})→ ${surface.newVersion}(${surface.newSymbols})`, 'cmd')
+  for (const gap of bundle.gaps.filter((entry) => entry.status === 'removed')) log(`  新版没了:${gap.specifier} 的 ${gap.symbol}${gap.candidates.length ? `(候选:${gap.candidates.join(', ')})` : ''}`)
+  for (const key of bundle.serviceKeys.filter((entry) => entry.status !== 'provided-both')) log(`  服务 key ${key.key}:${key.status === 'observed-pending' ? '真启动里确实没起来' : key.status === 'provided-old-only' ? '旧版有 provider,新版没找到' : '两版包里都没找到,未验证'}`, 'cmd')
+  if (bundle.market) log(`  市场对照:${bundle.market.verdict === 'author-fixed' ? `作者已在 ${bundle.market.marketVersion} 修好 —— 升级即可,不必提 PR` : '作者最新版仍未覆盖当前 runtime'}`, 'cmd')
+}
+
+/**
+ * @param {string} plugin 插件包名
+ * @param {any} doctor 体检结果
+ */
+function preparePr(plugin, doctor) {
+  void (async () => {
+    const draft = await guard('PR 材料', () => invoke('pr_draft', { profile: doctor.profile, plugin, target: els.target.value }))
+    if (!draft) return
+    log(`PR 材料(${draft.kind})写在 ${draft.dir}`)
+    for (const file of draft.files) log(`  ${file}`, 'cmd')
+    for (const note of draft.notes) log(`  注:${note}`, 'cmd')
+    if (draft.ghCommand) log(`发不发由你:${draft.ghCommand}`)
+    else log('没给 gh 命令:按上面的注,这次不该提 PR。', 'cmd')
+  })()
+}
+
+/**
+ * @param {any} item 一条诊断
+ * @param {any} doctor 体检结果
+ * @returns {HTMLElement} 卡片
+ */
+function findingCard(item, doctor) {
+  const card = el('article', 'card')
+  const suggestion = (doctor.suggestions ?? []).find((entry) => entry.plugin === item.plugin)
+
+  const head = el('div', 'card-head')
+  head.append(el('span', 'name', item.plugin), el('span', 'meta', item.version))
+  const badge = el('span', 'badge', item.state)
+  badge.dataset.tone = item.state === 'ACTIVE' ? 'ok' : item.state === 'PENDING' || item.state === 'FAILED' || item.state === 'DISABLED' ? 'bad' : 'warn'
+  head.append(badge, el('span', 'spacer'))
+  head.append(el('span', 'meta', suggestion?.upgrade ? '作者已修' : suggestion?.market?.verdict === 'still-broken' ? '作者未修' : '市场未对照'))
+  card.append(head)
+
+  const grid = el('dl', 'cause')
+  grid.append(el('dt', '', '根因'), el('dd', '', item.rootCause))
+  grid.append(el('dt', '', '已排除'), el('dd', '', item.excluded ?? '—'))
+  card.append(grid)
+
+  const actions = el('div', 'actions')
+  if (suggestion?.upgrade) {
+    actions.append(el('span', 'line', `不用打补丁:升级到 ${suggestion.upgrade.version ?? '?'} 就行。`), commandRow(suggestion.upgrade.command))
+  } else {
+    actions.append(button('面 diff', 'primary', () => void runWhy(item.plugin, doctor)))
+    actions.append(button('生成 PR 材料', '', () => preparePr(item.plugin, doctor)))
+    if (suggestion && doctor.runtime.installed) {
+      actions.append(
+        button('写豁免(风险自负)', 'danger', () =>
+          twoStep(`豁免 ${item.plugin}@${item.version}`, (confirm) => invoke('fix_exempt', { profile: doctor.profile, pluginVersion: `${item.plugin}@${item.version}`, runtime: doctor.runtime.installed, confirm })),
+        ),
+      )
+    }
+    if (suggestion?.market?.verdict === 'still-broken') actions.append(el('span', 'line', `作者最新版 ${suggestion.market.version ?? '?'} 仍不覆盖当前 runtime —— 升级不解决问题。`))
+  }
+  const rowId = (item.fixes ?? []).map((fix) => fix.rowId).find((id) => typeof id === 'string')
+  if (rowId) actions.append(button(`解禁该行 ${rowId}`, 'primary', () => twoStep(`行 ${rowId} 改为 disabled: false`, (confirm) => invoke('fix_row', { profile: doctor.profile, rowId, disabled: false, confirm }))))
+  card.append(actions)
+  return card
 }
 
 /**
  * @param {any} doctor 体检结果
  */
-function renderRows(doctor) {
-  els.body.innerHTML = ''
+function renderFindings(doctor) {
+  clear(els.findings)
   if (!doctor) return
   if (doctor.diagnoses.length === 0) {
-    els.body.innerHTML = '<tr><td colspan="5" class="empty">没有需要处理的插件:该 profile 里没发现会被预检拦下、被禁用或没装上的项。</td></tr>'
+    els.findings.append(el('div', 'empty', '没有需要处理的插件:该 profile 里没发现会被预检拦下、被禁用或没装上的项。'))
     return
   }
-  for (const item of doctor.diagnoses) {
-    const row = document.createElement('tr')
-    const actions = document.createElement('td')
-    actions.className = 'actions'
-
-    actions.append(
-      button('面 diff', '', () => {
-        void (async () => {
-          const bundle = await call('面 diff', () => invoke('why', { profile: doctor.profile, plugin: item.plugin, target: els.target.value }))
-          if (!bundle) return
-          log(`面 diff ${item.plugin}@${item.version}:覆盖 ${bundle.surfaces.length} 个官方包;消失的依赖 ${bundle.gaps.filter((gap) => gap.status === 'removed').length} 处;peer 判定 ${bundle.peer.verdict}`)
-          for (const surface of bundle.surfaces) log(`  ${surface.specifier} ${surface.oldVersion}(${surface.oldSymbols})→ ${surface.newVersion}(${surface.newSymbols})`, 'cmd')
-          for (const gap of bundle.gaps.filter((entry) => entry.status === 'removed')) log(`  新版没了:${gap.specifier} 的 ${gap.symbol}${gap.candidates.length ? `(候选:${gap.candidates.join(', ')})` : ''}`)
-          for (const key of bundle.serviceKeys.filter((entry) => entry.status !== 'provided-both')) log(`  服务 key ${key.key}:${key.status === 'provided-old-only' ? '旧版有 provider,新版没找到' : '两版包里都没找到,未验证'}`, 'cmd')
-        })()
-      }),
-    )
-
-    actions.append(
-      button('生成 PR 材料', '', () => {
-        void (async () => {
-          const draft = await call('PR 材料', () => invoke('pr_draft', { profile: doctor.profile, plugin: item.plugin, target: els.target.value }))
-          if (!draft) return
-          log(`PR 材料(${draft.kind})写在 ${draft.dir}`)
-          for (const file of draft.files) log(`  ${file}`, 'cmd')
-          for (const note of draft.notes) log(`  注:${note}`, 'cmd')
-          if (draft.ghCommand) log(`发不发由你:${draft.ghCommand}`)
-        })()
-      }),
-    )
-
-    const suggestion = (doctor.suggestions ?? []).find((entry) => entry.plugin === item.plugin)
-    if (suggestion && doctor.runtime.installed) {
-      actions.append(
-        button('写豁免(风险自负)', 'danger', () =>
-          twoStep(`豁免 ${item.plugin}@${item.version}`, (confirm) =>
-            invoke('fix_exempt', { profile: doctor.profile, pluginVersion: `${item.plugin}@${item.version}`, runtime: doctor.runtime.installed, confirm }),
-          ),
-        ),
-      )
-    }
-    const rowId = (item.fixes ?? []).map((fix) => fix.rowId).find((id) => typeof id === 'string')
-    if (rowId) {
-      actions.append(button(`解禁该行 ${rowId}`, 'primary', () => twoStep(`行 ${rowId} 改为 disabled: false`, (confirm) => invoke('fix_row', { profile: doctor.profile, rowId, disabled: false, confirm }))))
-    }
-
-    const stateClass = item.state === 'ACTIVE' ? 'state-ok' : item.state === 'PENDING' || item.state === 'FAILED' || item.state === 'DISABLED' ? 'state-bad' : 'state-warn'
-    row.innerHTML = `<td class="name">${item.plugin}<small>${item.version}</small></td><td class="${stateClass}">${item.state}</td><td class="cause">${item.rootCause}</td><td class="cause">${item.excluded ?? '—'}</td>`
-    row.append(actions)
-    els.body.append(row)
-  }
+  for (const item of doctor.diagnoses) els.findings.append(findingCard(item, doctor))
 }
 
 /**
  * @param {any} status journal
  */
 function renderJournal(status) {
-  els.journal.innerHTML = ''
+  clear(els.journal)
   if (!status || status.applied.length === 0) {
-    els.journal.innerHTML = '<div class="empty">还没有本工具写下的改动。写动作会在 profile 的 <code>.dsh-rescue/</code> 里留 journal、<code>.bak</code> 与 <code>undo.md</code>。</div>'
+    els.journal.append(el('div', 'empty', '还没有本工具写下的改动。写动作会在 profile 的 .dsh-rescue/ 里留 journal、.bak 与 undo.md。'))
     return
   }
   for (const record of status.applied) {
-    const line = document.createElement('div')
-    line.className = 'journal-row'
-    const text = document.createElement('span')
-    text.innerHTML = `${record.ordinal}. <em>${record.fixKind}</em> ${record.plugin} → <em>${record.target.split(/[\\/]/).pop()}</em> ${record.backupPaths.length ? `· 备份 ${record.backupPaths.map((item) => item.split(/[\\/]/).pop()).join(', ')}` : '· 无备份'}`
-    line.append(text)
-    line.append(
-      button('还原', 'danger', () => twoStep(`还原第 ${record.ordinal} 条`, (confirm) => invoke('undo', { profile: els.profile.value, ordinal: record.ordinal, confirm }))),
-    )
-    els.journal.append(line)
+    const card = el('article', 'card')
+    const row = el('div', 'journal-row')
+    row.append(el('span', '', `${record.ordinal}. ${record.fixKind} ${record.plugin} → ${record.target.split(/[\\/]/).pop()}${record.backupPaths.length ? ` · 备份 ${record.backupPaths.map((item) => item.split(/[\\/]/).pop()).join(', ')}` : ' · 无备份'}`))
+    row.append(button('还原', 'danger', () => twoStep(`还原第 ${record.ordinal} 条`, (confirm) => invoke('undo', { profile: els.profile.value, ordinal: record.ordinal, confirm }))))
+    card.append(row)
+    els.journal.append(card)
   }
+}
+
+/** @returns {Promise<void>} 市场 + 体检 + journal 一起刷新 */
+async function refresh() {
+  const profile = els.profile.value
+  if (!profile) return
+  const runtime = els.target.value.trim()
+  const offline = els.offline.checked
+  const [doctor, market, status] = await Promise.all([
+    guard('体检', () => invoke('doctor', { profile })),
+    guard('市场对照', () => invoke('market', { profile, runtime, offline })),
+    guard('读 journal', () => invoke('status', { profile })),
+  ])
+  state.doctor = doctor
+  state.market = market
+  state.status = status
+  renderChips(doctor)
+  renderFindings(doctor)
+  renderJournal(status)
+  renderMarket(doctor)
 }
 
 els.refresh.addEventListener('click', () => void refresh())
 els.profile.addEventListener('change', () => void refresh())
-els.target.addEventListener('change', () => renderSummary(state.doctor))
+els.target.addEventListener('change', () => void refresh())
+els.offline.addEventListener('change', () => void refresh())
+els.logClear.addEventListener('click', () => clear(els.logBody))
+for (const [name, tab] of Object.entries(tabs)) tab.button.addEventListener('click', () => showView(name))
 els.capture.addEventListener('click', () => {
   void (async () => {
     const profile = els.profile.value
     if (!profile) return
     log(`真启动采集:会启动一次 dsh(写 session 与日志)。${els.allowLive.checked ? '已允许默认 home。' : '未勾选"允许在默认 home 真启动",内核会拒绝 —— 请先用 --home 指排演 home。'}`, 'cmd')
-    const symptoms = await call('真启动采集', () =>
-      invoke('capture', { profile, dsh: els.dsh.value.trim() || null, timeoutSeconds: 120, allowLive: els.allowLive.checked }),
-    )
+    const symptoms = await guard('真启动采集', () => invoke('capture', { profile, dsh: els.dsh.value.trim() || null, timeoutSeconds: 120, allowLive: els.allowLive.checked }))
     if (!symptoms) return
     log(`症状 ${symptoms.schema}:未激活条目 ${symptoms.entries.length} 条,退出码 ${symptoms.exitCode ?? '无'}`)
     for (const entry of symptoms.entries) log(`  ${entry.module} (${entry.entryId}) ${entry.state} ${entry.missingServices.join(', ') || ''}`, 'cmd')
@@ -234,6 +420,7 @@ els.capture.addEventListener('click', () => {
   })()
 })
 
+showView('market')
 await loadProfiles()
 await refresh()
-log('就绪。体检只读;任何写动作都要你先看预览再点确认。')
+log('就绪。查市场、体检、读 journal 都只读;任何写动作都要先看预览再点确认。')

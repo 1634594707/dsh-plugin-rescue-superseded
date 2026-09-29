@@ -100,6 +100,28 @@ fn doctor(profile: String) -> Result<Value, String> {
 }
 
 /// @param profile profile 名
+/// @param runtime 要对照的官方精确版本;不给就用本机装的那个
+/// @param offline 只用市场缓存,不出网
+/// @return 已装插件 × 市场索引的对照结论
+#[tauri::command]
+fn market(profile: String, runtime: Option<String>, offline: bool) -> Result<Value, String> {
+    let mut args = vec![
+        "market".to_string(),
+        "--profile".to_string(),
+        profile,
+        "--json".to_string(),
+    ];
+    if let Some(version) = runtime.filter(|item| !item.trim().is_empty()) {
+        args.push("--runtime".to_string());
+        args.push(version);
+    }
+    if offline {
+        args.push("--offline".to_string());
+    }
+    run(&args)
+}
+
+/// @param profile profile 名
 /// @param plugin 插件包名
 /// @param target 对照的官方版本
 /// @return 诊断包
@@ -233,6 +255,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             profiles,
             doctor,
+            market,
             why,
             pr_draft,
             capture,

@@ -7,53 +7,59 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header>
+    <header class="topbar">
       <div class="brand">
-        <strong>dsh-rescue</strong>
-        <span>官方更新后,先看清插件为什么起不来,再决定改不改</span>
+        <strong>dsh-rescue 插件修复台</strong>
+        <span>官方更新后,先看作者修没修,再决定要不要打补丁</span>
       </div>
-      <div class="controls">
-        <label for="profile">profile</label>
-        <select id="profile"></select>
-        <label for="target">对照版本</label>
-        <input id="target" value="0.2.0-rc.1" spellcheck="false" />
-        <label for="dsh">dsh 入口</label>
-        <input id="dsh" placeholder="dsh 或 bin.js 路径" size="24" spellcheck="false" />
-        <label class="check"><input id="allowLive" type="checkbox" />允许在默认 home 真启动</label>
-        <button id="capture" type="button">真启动采集症状</button>
-        <button id="refresh" type="button">重新体检</button>
+      <div class="toolbar">
+        <label for="profile">profile<select id="profile"></select></label>
+        <label for="target">对照版本<input id="target" value="0.2.0-rc.1" spellcheck="false" /></label>
+        <label class="check"><input id="offline" type="checkbox" />只用缓存</label>
+        <button id="refresh" class="primary" type="button">重新查</button>
       </div>
     </header>
 
-    <section id="summary" class="summary" aria-live="polite"></section>
+    <nav class="tabs" aria-label="视图">
+      <button id="tab-market" class="tab" type="button" aria-controls="view-market">插件市场</button>
+      <button id="tab-doctor" class="tab" type="button" aria-controls="view-doctor">本机诊断</button>
+      <button id="tab-journal" class="tab" type="button" aria-controls="view-journal">改动记录</button>
+    </nav>
 
     <main>
-      <table id="findings">
-        <thead>
-          <tr>
-            <th>插件</th>
-            <th>状态</th>
-            <th>根因</th>
-            <th>已排除</th>
-            <th>可做的动作</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <section id="view-market" class="view" role="region">
+        <div id="verdict" class="verdict" aria-live="polite"></div>
+        <div id="market" class="cards"></div>
+      </section>
 
-      <section class="journal">
-        <h2>已应用的改动</h2>
-        <div id="journal" class="journal-body"></div>
+      <section id="view-doctor" class="view" role="region" hidden>
+        <div id="summary" class="chips"></div>
+        <div class="subtoolbar">
+          <label for="dsh">dsh 入口<input id="dsh" placeholder="dsh,或源码仓构建出的 bin.js 路径" spellcheck="false" /></label>
+          <label class="check"><input id="allowLive" type="checkbox" />允许在默认 home 真启动</label>
+          <button id="capture" type="button">真启动采集症状</button>
+          <span class="hint">peer 拦截静态就算得出;缺 provider 这类运行期症状要靠真启动拿证据。</span>
+        </div>
+        <div id="findings" class="cards"></div>
+      </section>
+
+      <section id="view-journal" class="view" role="region" hidden>
+        <div id="journal" class="cards"></div>
       </section>
     </main>
 
-    <section id="log" class="log" aria-live="polite"></section>
+    <section id="log" class="log" aria-live="polite">
+      <header class="log-head">
+        <strong>动作记录</strong>
+        <button id="logClear" type="button">清空</button>
+      </header>
+      <div id="logBody" class="log-body"></div>
+    </section>
 
     <footer>
       <span>写动作一律两步:先预览要改哪一行,再确认执行。</span>
       <span>还原靠改前的 <code>.bak</code>,逐字节比对。</span>
       <span>本工具不 fork、不 push、不开 PR,只备料。</span>
-      <span>静态分析算得出 peer 拦截;缺 provider 这类要靠「真启动采集」拿运行证据。</span>
     </footer>
 
     <script type="module" src="./shell.js"></script>
