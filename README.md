@@ -62,6 +62,7 @@ dsh-plugin-rescue/
     check-manifest.mjs      dependencies 为空、peer 无 dsh-*、无 install 钩子
   patches/                  补丁规格与样例(§5.4 的"一补丁一包",包尚未建)
   review/                   v0.1–v0.3 期间的工作材料,结论已合入 v0.4 正文;术语按当时写法冻结
+  scripts/demo.mjs            走一遍 kernel 的可运行演示(pnpm run demo)
   .github/workflows/ci.yml  门禁:manifest → build → test → size,ubuntu + windows 双 runner(Q14)
 ```
 
@@ -71,7 +72,10 @@ dsh-plugin-rescue/
 pnpm install
 pnpm run gate        # check:manifest → build → test(40 项)→ check:size
 pnpm run typecheck   # 含 *.test.ts
+pnpm run demo        # 走一遍已落地的 kernel:矩阵校验、F1 写盘与还原、报告渲染、脱敏、重试预算
 ```
+
+`scripts/demo.mjs` 用的是临时目录里的假 profile 与种子矩阵,**不是真实 dsh 安装** —— 它证明的是这些判据在实现层成立,不替代 A1–A15 的实机结论。
 
 宿主耦合面(D1 复用、D2 `internal/status` 订阅、`installBundle`、`setVersionExemption`、真实 profile 上的还原)一行未写:那些判据要在装了 dsh 的 profile 上实测,归 [roadmap.md](roadmap.md) 阶段 1 的 A1–A6 / A9 / A10。
 
