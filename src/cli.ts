@@ -21,6 +21,7 @@ import { renderDiagnosisReport } from './report/render.ts'
 import { emptyState, loadState, renderUndoNote } from './state/store.ts'
 import type { RescueState } from './state/store.ts'
 import { applyExemption, applyRowChange, undoApplied } from './fix/apply.ts'
+import { writePrDraft } from './fix/pr.ts'
 import { writeFileAtomically } from './write/atomic.ts'
 
 /** 解析后的命令行。 */
@@ -32,7 +33,7 @@ interface Parsed {
 }
 
 /** 认识的开关。不在这里的直接报错:安全开关(`--dry-run`)拼错时静默忽略,等于把写动作当成演练。 */
-const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help', 'to', 'json', 'cache'])
+const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help', 'to', 'json', 'cache', 'out'])
 
 /**
  * @param name 去掉前缀的开关名
@@ -129,6 +130,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   dsh-rescue doctor [--home DIR] [--profile NAME]        分析(只读)
   dsh-rescue why <包名> [--to <官方版本>] [--json] [--cache DIR]
                                                          插件依赖面 × 新旧官方公开面 → 诊断包
+  dsh-rescue pr <包名> --to <官方版本> [--out DIR]
+                                                         诊断包 → PR 材料(diff + 正文),不 fork 不 push
   dsh-rescue fix exempt <pkg@version> --runtime VER --accept-risk
                                                          写一条精确版本豁免(F0)
   dsh-rescue fix row <行 id> [--disabled true|false] [--config FILE]
@@ -173,6 +176,28 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (parsed.flags.json === true) console.log(JSON.stringify(bundle, null, 2))
     else console.log(renderDiagnostic(bundle))
     console.log(`要给别人看:--json 存成文件(${plugin.replace(/^@/, '').replace(/[\/@]/g, '_')}.json),对方 doctor / why 都能在同一份数据上接着走。`)
+    return 0
+  }
+
+  if (parsed.command === 'pr') {
+    const plugin = parsed.positional[0]
+    if (!plugin) throw new Error('pr 需要插件包名,例如:dsh-rescue pr @michengai/dsh-archive-manager --to 0.2.0-rc.1')
+    const target = typeof parsed.flags.to === 'string' ? parsed.flags.to : null
+    const evaluation = evaluateProfile(snapshot)
+    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, ...(typeof parsed.flags.cache === 'string' ? { cacheDir: path.resolve(parsed.flags.cache) } : {}) })
+    const installed = snapshot.installed.find((entry) => entry.name === plugin)
+    if (!installed) throw new Error(`解析不到 ${plugin}`)
+    const packageJson = await fs.promises.readFile(path.join(installed.dir, 'package.json'), 'utf8')
+    const repository = (JSON.parse(packageJson) as { repository?: unknown }).repository
+    const repo = typeof repository === 'string' ? repository : repository && typeof repository === 'object' && 'url' in repository ? String((repository as { url: unknown }).url) : null
+    const outDir = path.resolve(typeof parsed.flags.out === 'string' ? parsed.flags.out : path.join('pr-out', plugin.replace(/^@/, '').replace(/[\/@]/g, '_')))
+    const draft = await writePrDraft(bundle, packageJson, repo, outDir)
+    console.log(`PR 草稿类别:${draft.kind};写在 ${draft.dir}`)
+    for (const file of draft.files) console.log(`  ${file}`)
+    for (const proposal of draft.proposals.filter((item) => item.proposed !== null)) console.log(`  peer ${proposal.peer}: ${proposal.current} → ${proposal.proposed}`)
+    for (const note of draft.notes) console.log(`  注:${note}`)
+    console.log(draft.ghCommand === null ? '没有仓库地址,自己补 --repo 后按 PR.md 提。' : `材料备好了,发不发由你:\n  ${draft.ghCommand}`)
+    console.log('工具不 fork、不 push、不开 PR:往别人仓库里写东西必须由有权限的人明确发起。')
     return 0
   }
 

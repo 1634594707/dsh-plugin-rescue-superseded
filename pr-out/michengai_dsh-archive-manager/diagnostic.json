@@ -1,0 +1,122 @@
+{
+  "schema": "rescue.diagnostic/v1",
+  "generatedAt": "2026-09-29T06:38:35.746Z",
+  "profile": "desktop",
+  "runtime": {
+    "installed": "0.1.7-rc.2",
+    "target": "0.2.0-rc.1"
+  },
+  "plugin": {
+    "name": "@michengai/dsh-archive-manager",
+    "version": "0.1.44",
+    "files": 7
+  },
+  "peer": {
+    "verdict": "blocked",
+    "ranges": {
+      "@deepseek-ai/dsh-client-connection": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-locale": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-store": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-ui-sidebar": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-client-ui-workspace": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-session": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-session-projection-cache": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-spill-local": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-storage-domain": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-typert-protocol": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-typert-registry": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+      "@deepseek-ai/dsh-workspace": "0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2"
+    },
+    "gaps": [
+      "@deepseek-ai/dsh-client-connection 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-client-locale 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-client-runtime 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 未装",
+      "@deepseek-ai/dsh-client-store 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-client-ui-conversation 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-client-ui-primitives 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-client-ui-sidebar 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-client-ui-workspace 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-host-webserver 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-session 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-session-projection-cache 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-spill-local 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-storage-domain 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-typert-protocol 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-typert-registry 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2",
+      "@deepseek-ai/dsh-workspace 要 0.1.0-rc.8 || 0.1.1-rc.2 || 0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.6-alpha.1 || 0.1.6-alpha.2,已装 0.1.7-rc.2"
+    ]
+  },
+  "serviceKeys": [
+    {
+      "key": "locale",
+      "status": "found-nowhere"
+    },
+    {
+      "key": "remote",
+      "status": "found-nowhere"
+    },
+    {
+      "key": "sessions",
+      "status": "found-nowhere"
+    },
+    {
+      "key": "slots",
+      "status": "found-nowhere"
+    },
+    {
+      "key": "typert",
+      "status": "found-nowhere"
+    },
+    {
+      "key": "webServer",
+      "status": "found-nowhere"
+    },
+    {
+      "key": "workspaces",
+      "status": "found-nowhere"
+    }
+  ],
+  "gaps": [],
+  "surfaces": [
+    {
+      "specifier": "@deepseek-ai/dsh-session-projection-cache",
+      "oldVersion": "0.1.7-rc.2",
+      "newVersion": "0.2.0-rc.1",
+      "oldSymbols": 6,
+      "newSymbols": 6
+    },
+    {
+      "specifier": "@deepseek-ai/dsh-spill-local",
+      "oldVersion": "0.1.7-rc.2",
+      "newVersion": "0.2.0-rc.1",
+      "oldSymbols": 9,
+      "newSymbols": 10
+    },
+    {
+      "specifier": "@deepseek-ai/dsh-storage-domain",
+      "oldVersion": "0.1.7-rc.2",
+      "newVersion": "0.2.0-rc.1",
+      "oldSymbols": 9,
+      "newSymbols": 10
+    },
+    {
+      "specifier": "@deepseek-ai/dsh-typert-protocol",
+      "oldVersion": "0.1.7-rc.2",
+      "newVersion": "0.2.0-rc.1",
+      "oldSymbols": 13,
+      "newSymbols": 13
+    },
+    {
+      "specifier": "@deepseek-ai/dsh-workspace",
+      "oldVersion": "0.1.7-rc.2",
+      "newVersion": "0.2.0-rc.1",
+      "oldSymbols": 17,
+      "newSymbols": 17
+    }
+  ],
+  "notes": []
+}
