@@ -415,7 +415,7 @@ els.capture.addEventListener('click', () => {
     const symptoms = await guard('真启动采集', () => invoke('capture', { profile, dsh: els.dsh.value.trim() || null, timeoutSeconds: 120, allowLive: els.allowLive.checked }))
     if (!symptoms) return
     log(`症状 ${symptoms.schema}:未激活条目 ${symptoms.entries.length} 条,退出码 ${symptoms.exitCode ?? '无'}`)
-    for (const entry of symptoms.entries) log(`  ${entry.module} (${entry.entryId}) ${entry.state} ${entry.missingServices.join(', ') || ''}`, 'cmd')
+    for (const entry of symptoms.entries) log(`  ${entry.module} ${entry.entryId ? `(${entry.entryId}) ` : ''}${{ pending: '等待服务', failed: '启动失败', skipped: '预检跳过' }[entry.state] ?? entry.state}${entry.missingServices.length ? `:${entry.missingServices.join(', ')}` : ''}${entry.detail ? ` —— ${entry.detail}` : ''}`, 'cmd')
     for (const note of symptoms.notes) log(`  注:${note}`, 'cmd')
   })()
 })
