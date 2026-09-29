@@ -96,7 +96,7 @@ export function classify(snapshot: ProfileSnapshot, evaluation: Evaluation, matr
       state: 'DISABLED',
       rootCause: `profile 补丁层的行 ${row.id} 被显式 disabled`,
       failureId: 'bundle-skipped',
-      fixes: [{ kind: 'config-patch', label: `fix row --id ${row.id} --disabled false`, restartRequired: false, consent: FIX_KIND_CONTRACT['config-patch'].consent }],
+      fixes: [{ kind: 'config-patch', label: '该行被 profile 显式禁用', restartRequired: false, consent: FIX_KIND_CONTRACT['config-patch'].consent, rowId: row.id }],
     })
   }
 

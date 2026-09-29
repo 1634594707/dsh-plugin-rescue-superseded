@@ -29,7 +29,7 @@ function bundle(overrides: Partial<DiagnosticBundle> = {}): DiagnosticBundle {
       ranges: { '@deepseek-ai/dsh-session': '0.1.0-rc.8 || 0.1.6-alpha.2', '@deepseek-ai/dsh-settings': '>=0.1.0' },
       gaps: ['@deepseek-ai/dsh-session 要 0.1.0-rc.8 || 0.1.6-alpha.2,已装 0.1.7-rc.2'],
     },
-    serviceKeys: [{ key: 'webServer', status: 'found-nowhere' }],
+    serviceKeys: [{ key: 'webServer', status: 'found-nowhere', source: 'static' }],
     gaps: [],
     surfaces: [{ specifier: '@deepseek-ai/dsh-session', oldVersion: '0.1.7-rc.2', newVersion: TARGET, oldSymbols: 35, newSymbols: 36 }],
     notes: [],

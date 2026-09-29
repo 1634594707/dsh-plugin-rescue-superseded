@@ -9,7 +9,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { readPluginFace } from '../src/analyze/imports.ts'
-import { buildDiagnostic } from '../src/analyze/why.ts'
+import { buildDiagnostic, renderDiagnostic } from '../src/analyze/why.ts'
 import { readProfile } from '../src/analyze/profile.ts'
 import { evaluateProfile } from '../src/analyze/peers.ts'
 
@@ -68,5 +68,22 @@ test('an unknown plugin name says what did resolve instead of failing silently',
   const home = makeHome()
   const snapshot = readProfile(home, 'default')
   await assert.rejects(() => buildDiagnostic(snapshot, evaluateProfile(snapshot), '@someone/dsh-nope'), /里没解析到/)
+  fs.rmSync(home, { recursive: true, force: true })
+})
+
+test('a service key seen in a real boot is reported as evidence, not as an unverified guess', async () => {
+  const home = makeHome()
+  const snapshot = readProfile(home, 'default')
+  const evaluation = evaluateProfile(snapshot)
+  const plain = await buildDiagnostic(snapshot, evaluation, '@someone/dsh-broken', {})
+  assert.equal(plain.serviceKeys.find((entry) => entry.key === 'webServer')?.status, 'found-nowhere')
+  assert.equal(plain.serviceKeys.find((entry) => entry.key === 'webServer')?.source, 'static')
+
+  const symptoms = { entries: [{ module: '@someone/dsh-broken', missingServices: ['webServer'] }] }
+  const observed = await buildDiagnostic(snapshot, evaluation, '@someone/dsh-broken', { symptoms })
+  assert.equal(observed.serviceKeys.find((entry) => entry.key === 'webServer')?.status, 'observed-pending')
+  assert.equal(observed.serviceKeys.find((entry) => entry.key === 'webServer')?.source, 'capture')
+  assert.match(renderDiagnostic(observed), /真启动里插件卡在等它/)
+  assert.match(renderDiagnostic(plain), /未验证/)
   fs.rmSync(home, { recursive: true, force: true })
 })

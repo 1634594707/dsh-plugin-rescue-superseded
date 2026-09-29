@@ -14,6 +14,8 @@ export interface FixOffer {
   readonly label: string
   readonly restartRequired: boolean
   readonly consent: 'none' | 'preview' | 'strong'
+  /** `config-patch` 指向的补丁层行 id,给消费方(壳)直接发起改动用。 */
+  readonly rowId?: string
 }
 
 /** 一个插件的诊断结论。 */

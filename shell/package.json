@@ -1,0 +1,18 @@
+{
+  "name": "dsh-rescue-shell",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "dsh-rescue 的桌面壳:Tauri 外壳只做渲染与按钮,判据与补丁全部由 Node 内核算。",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

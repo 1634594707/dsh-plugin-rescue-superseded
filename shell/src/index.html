@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dsh-rescue 插件修复台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <strong>dsh-rescue</strong>
+        <span>官方更新后,先看清插件为什么起不来,再决定改不改</span>
+      </div>
+      <div class="controls">
+        <label for="profile">profile</label>
+        <select id="profile"></select>
+        <label for="target">对照版本</label>
+        <input id="target" value="0.2.0-rc.1" spellcheck="false" />
+        <button id="refresh" type="button">重新体检</button>
+      </div>
+    </header>
+
+    <section id="summary" class="summary" aria-live="polite"></section>
+
+    <main>
+      <table id="findings">
+        <thead>
+          <tr>
+            <th>插件</th>
+            <th>状态</th>
+            <th>根因</th>
+            <th>已排除</th>
+            <th>可做的动作</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <section class="journal">
+        <h2>已应用的改动</h2>
+        <div id="journal" class="journal-body"></div>
+      </section>
+    </main>
+
+    <section id="log" class="log" aria-live="polite"></section>
+
+    <footer>
+      <span>写动作一律两步:先预览要改哪一行,再确认执行。</span>
+      <span>还原靠改前的 <code>.bak</code>,逐字节比对。</span>
+      <span>本工具不 fork、不 push、不开 PR,只备料。</span>
+    </footer>
+
+    <script type="module" src="./shell.js"></script>
+  </body>
+</html>

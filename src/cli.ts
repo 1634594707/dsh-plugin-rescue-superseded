@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
 import { classify } from './analyze/classify.ts'
+import { renderSymptoms, runCapture } from './analyze/capture.ts'
 import { buildDiagnostic, renderDiagnostic } from './analyze/why.ts'
 import { listProfiles, readProfile, resolveHome } from './analyze/profile.ts'
 import { evaluateProfile } from './analyze/peers.ts'
@@ -33,7 +34,7 @@ interface Parsed {
 }
 
 /** 认识的开关。不在这里的直接报错:安全开关(`--dry-run`)拼错时静默忽略,等于把写动作当成演练。 */
-const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help', 'to', 'json', 'cache', 'out'])
+const FLAG_NAMES = new Set(['home', 'profile', 'runtime', 'config', 'disabled', 'dry-run', 'accept-risk', 'revoke', 'offline-only', 'help', 'to', 'json', 'cache', 'out', 'dsh', 'timeout', 'allow-live', 'symptoms', 'prompt'])
 
 /**
  * @param name 去掉前缀的开关名
@@ -127,22 +128,35 @@ export async function main(argv: readonly string[]): Promise<number> {
   const parsed = parseArgv(argv)
   if (parsed.command === 'help' || parsed.flags.help === true) {
     console.log(`用法:
-  dsh-rescue doctor [--home DIR] [--profile NAME]        分析(只读)
-  dsh-rescue why <包名> [--to <官方版本>] [--json] [--cache DIR]
+  dsh-rescue profiles [--json]                           列出该 home 下的 profile
+  dsh-rescue doctor [--home DIR] [--profile NAME] [--json]
+                                                         分析(只读)
+  dsh-rescue capture [--dsh PATH] [--prompt TEXT] [--timeout 秒] [--allow-live] [--json]
+                                                         真启动一次,采集未激活条目与缺失服务
+  dsh-rescue why <包名> [--to <官方版本>] [--symptoms 文件] [--json] [--cache DIR]
                                                          插件依赖面 × 新旧官方公开面 → 诊断包
-  dsh-rescue pr <包名> --to <官方版本> [--out DIR]
+  dsh-rescue pr <包名> --to <官方版本> [--out DIR] [--json]
                                                          诊断包 → PR 材料(diff + 正文),不 fork 不 push
   dsh-rescue fix exempt <pkg@version> --runtime VER --accept-risk
                                                          写一条精确版本豁免(F0)
   dsh-rescue fix row <行 id> [--disabled true|false] [--config FILE]
                                                          按行 id 整值覆盖补丁层(F1)
   dsh-rescue undo <序号>                                 从 .bak 逐字节还原
-  dsh-rescue status                                      看 journal 里已应用与未完成的记录
-所有 fix / undo 都支持 --dry-run(只算不写)。`)
+  dsh-rescue status [--json]                             看 journal 里已应用与未完成的记录
+fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,提示走 stderr。`)
     return 0
   }
 
   const home = resolveHome(typeof parsed.flags.home === 'string' ? parsed.flags.home : undefined)
+
+  if (parsed.command === 'profiles') {
+    const names = listProfiles(home)
+    if (parsed.flags.json === true) console.log(JSON.stringify({ home, profiles: names }))
+    else console.log(`home:${home}\n${names.length ? names.join('\n') : '(没有带 package.json 的 profile)'}`)
+    return 0
+  }
+
+  // 除 profiles 外都要先定位到一个 profile
   const snapshot = readProfile(home, pickProfile(parsed.flags, home))
   const offlineOnly = parsed.flags.offlineOnly === true
 
@@ -150,11 +164,36 @@ export async function main(argv: readonly string[]): Promise<number> {
     const matrix = offlineOnly ? null : readMatrix('../matrix.json')
     const evaluation = evaluateProfile(snapshot)
     const diagnoses = classify(snapshot, evaluation, matrix)
-    const runtime = evaluation.runtimeVersion ?? '未识别(没找到 @deepseek-ai/dsh-app-boot)'
+    const runtimeVersion = evaluation.runtimeVersion
+    const suggestions = runtimeVersion === null ? [] : evaluation.blocked.map((verdict) => ({
+      plugin: verdict.plugin,
+      version: verdict.version,
+      command: `dsh-rescue fix exempt ${verdict.plugin}@${verdict.version} --runtime ${runtimeVersion} --accept-risk`,
+      rootFix: `让作者放宽 ${verdict.gaps[0]?.peer ?? 'peer 范围'}`,
+    }))
+    if (parsed.flags.json === true) {
+      console.log(JSON.stringify({
+        profile: snapshot.profile,
+        profileDir: snapshot.dir,
+        runtime: { installed: runtimeVersion, channel: /-(alpha|beta|rc)\./.test(runtimeVersion ?? '') ? 'rc' : 'stable' },
+        matrixAvailable: matrix !== null,
+        counts: {
+          bundles: snapshot.bundles.length,
+          runtime: evaluation.runtimeBundles.length,
+          compatible: evaluation.compatible.length,
+          blocked: evaluation.blocked.length,
+          exempted: evaluation.exempted.length,
+          missing: evaluation.missingBundles.length,
+        },
+        diagnoses,
+        suggestions,
+      }, null, 2))
+      return 0
+    }
     console.log(renderDiagnosisReport({
       profile: snapshot.profile,
-      runtime,
-      channel: /-(alpha|beta|rc)\./.test(evaluation.runtimeVersion ?? '') ? 'rc' : 'stable',
+      runtime: runtimeVersion ?? '未识别(没找到 @deepseek-ai/dsh-app-boot)',
+      channel: /-(alpha|beta|rc)\./.test(runtimeVersion ?? '') ? 'rc' : 'stable',
       matrixAvailable: matrix !== null,
       offlineCopy: '矩阵没用上 —— 离线不是插件没坏',
       plugins: diagnoses,
@@ -162,8 +201,34 @@ export async function main(argv: readonly string[]): Promise<number> {
     console.log(`profile:${snapshot.dir}`)
     console.log(`已装 bundle ${snapshot.bundles.length} 个(其中官方 runtime ${evaluation.runtimeBundles.length} 个,不参与兼容性判定):peer 全满足 ${evaluation.compatible.length} 个,会被拦 ${evaluation.blocked.length} 个,已放行 ${evaluation.exempted.length} 个,没装上 ${evaluation.missingBundles.length} 个。`)
     if (matrix === null) console.log('分类可用(来自文件事实),修法一栏需要矩阵或你显式批准。')
-    const runtimeVersion = evaluation.runtimeVersion
-    if (runtimeVersion !== null) for (const verdict of evaluation.blocked) console.log(`下一步:dsh-rescue fix exempt ${verdict.plugin}@${verdict.version} --runtime ${runtimeVersion} --accept-risk   (风险自负;正解是让作者放宽 ${verdict.gaps[0]?.peer ?? 'peer'})`)
+    for (const suggestion of suggestions) console.log(`下一步:${suggestion.command}   (风险自负;正解是${suggestion.rootFix})`)
+    return 0
+  }
+
+  if (parsed.command === 'capture') {
+    const liveHome = resolveHome()
+    if (path.resolve(home) === path.resolve(liveHome) && parsed.flags.allowLive !== true) {
+      throw new Error(`capture 会真的启动一次 dsh(它会写 session、日志,可能还会装包)。要动默认 home 请加 --allow-live;建议用 --home DIR 指一个排演 home。`)
+    }
+    const prompt = typeof parsed.flags.prompt === 'string' ? parsed.flags.prompt : 'hi'
+    const timeoutSeconds = typeof parsed.flags.timeout === 'string' ? Number(parsed.flags.timeout) : 120
+    if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) throw new Error('--timeout 要的是正整数秒')
+    const given = typeof parsed.flags.dsh === 'string' ? path.resolve(parsed.flags.dsh) : 'dsh'
+    const isScript = /\.(?:c|m)?js$/.test(given)
+    if (isScript && !fs.existsSync(given)) throw new Error(`--dsh 指向的文件不存在:${given}(源码仓里先跑 pnpm run build,才有 apps/cli/lib/bin.js)`)
+    const symptoms = await runCapture({
+      home,
+      profile: snapshot.profile,
+      command: isScript ? process.execPath : given,
+      extraArgs: isScript ? [given] : [],
+      prompt,
+      timeoutMs: Math.round(timeoutSeconds * 1000),
+    })
+    if (parsed.flags.json === true) console.log(JSON.stringify(symptoms, null, 2))
+    else {
+      console.log(renderSymptoms(symptoms))
+      console.log(`喂给 why:dsh-rescue why <包名> --to <版本> --symptoms <这份 JSON 的文件>`)
+    }
     return 0
   }
 
@@ -171,11 +236,15 @@ export async function main(argv: readonly string[]): Promise<number> {
     const plugin = parsed.positional[0]
     if (!plugin) throw new Error('why 需要插件包名,例如:dsh-rescue why @michengai/dsh-archive-manager --to 0.2.0-rc.1')
     const target = typeof parsed.flags.to === 'string' ? parsed.flags.to : null
+    const symptomsPath = typeof parsed.flags.symptoms === 'string' ? path.resolve(parsed.flags.symptoms) : null
+    const symptoms = symptomsPath === null ? null : (JSON.parse(fs.readFileSync(symptomsPath, 'utf8')) as { entries: readonly { module: string; missingServices: readonly string[] }[] })
     const evaluation = evaluateProfile(snapshot)
-    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, ...(typeof parsed.flags.cache === 'string' ? { cacheDir: path.resolve(parsed.flags.cache) } : {}) })
+    const bundle = await buildDiagnostic(snapshot, evaluation, plugin, { target, symptoms, ...(typeof parsed.flags.cache === 'string' ? { cacheDir: path.resolve(parsed.flags.cache) } : {}) })
     if (parsed.flags.json === true) console.log(JSON.stringify(bundle, null, 2))
-    else console.log(renderDiagnostic(bundle))
-    console.log(`要给别人看:--json 存成文件(${plugin.replace(/^@/, '').replace(/[\/@]/g, '_')}.json),对方 doctor / why 都能在同一份数据上接着走。`)
+    else {
+      console.log(renderDiagnostic(bundle))
+      console.log(`要给别人看:${plugin.replace(/^@/, '').replace(/[\/@]/g, '_')}.json —— 用 --json 存盘,对方 doctor / why 都能在同一份数据上接着走。`)
+    }
     return 0
   }
 
@@ -192,6 +261,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     const repo = typeof repository === 'string' ? repository : repository && typeof repository === 'object' && 'url' in repository ? String((repository as { url: unknown }).url) : null
     const outDir = path.resolve(typeof parsed.flags.out === 'string' ? parsed.flags.out : path.join('pr-out', plugin.replace(/^@/, '').replace(/[\/@]/g, '_')))
     const draft = await writePrDraft(bundle, packageJson, repo, outDir)
+    if (parsed.flags.json === true) {
+      console.log(JSON.stringify({ ...draft, diagnostic: bundle }, null, 2))
+      return 0
+    }
     console.log(`PR 草稿类别:${draft.kind};写在 ${draft.dir}`)
     for (const file of draft.files) console.log(`  ${file}`)
     for (const proposal of draft.proposals.filter((item) => item.proposed !== null)) console.log(`  peer ${proposal.peer}: ${proposal.current} → ${proposal.proposed}`)
@@ -203,6 +276,16 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   if (parsed.command === 'status') {
     const state = readState(snapshot.statePath)
+    if (parsed.flags.json === true) {
+      console.log(JSON.stringify({
+        journal: snapshot.statePath,
+        counts: { applied: state.applied.length, unfinished: state.intents.length, ignored: state.ignored.length },
+        applied: state.applied.map((record, index) => ({ ordinal: index + 1, ...record })),
+        unfinished: state.intents,
+        failedAttempts: state.failedAttempts,
+      }, null, 2))
+      return 0
+    }
     console.log(`journal:${snapshot.statePath}`)
     console.log(`已应用 ${state.applied.length} 条,未完成 ${state.intents.length} 条,忽略 ${state.ignored.length} 条,失败计数 ${Object.keys(state.failedAttempts).length} 项。`)
     state.applied.forEach((record, index) => console.log(`  ${index + 1}. ${record.fixKind} ${record.plugin} → ${path.basename(record.target)}${record.backupPaths.length ? ` · 备份 ${record.backupPaths.map((item) => path.basename(item)).join(',')}` : ' · 无备份'}`))
@@ -216,7 +299,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     const state = readState(snapshot.statePath)
     const result = await undoApplied(state, ordinal, { ...(parsed.flags.dryRun === true ? { dryRun: true } : {}) })
     if (parsed.flags.dryRun !== true) await writeState(snapshot.statePath, result.state)
-    console.log(result.message)
+    if (parsed.flags.json === true) console.log(JSON.stringify({ message: result.message, target: result.target, dryRun: parsed.flags.dryRun === true, remainingApplied: result.state.applied.length }))
+    else console.log(result.message)
     return 0
   }
 
@@ -242,6 +326,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (parsed.flags.dryRun !== true) {
       await writeState(snapshot.statePath, result.state)
       if (result.state.applied.length > 0) await writeFileAtomically(path.join(path.dirname(snapshot.statePath), 'undo.md'), `${result.state.applied.map((record) => renderUndoNote(record)).join('')}\n`)
+    }
+    if (parsed.flags.json === true) {
+      console.log(JSON.stringify({ message: result.message, target: result.target, backupPath: result.backupPath, dryRun: parsed.flags.dryRun === true, applied: result.state.applied.length }, null, 2))
+      return 0
     }
     console.log(result.message)
     console.log('改动可见:补丁行在 profile 的 cordis.patch.yml,豁免在 compatibility.json;undo 靠 .bak。')

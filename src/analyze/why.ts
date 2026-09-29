@@ -27,7 +27,9 @@ export interface DependencyGap {
 /** 一个服务 key 的存在性判定。 */
 export interface ServiceKeyStatus {
   readonly key: string
-  readonly status: 'provided-both' | 'provided-old-only' | 'found-nowhere'
+  /** `observed-pending` 来自真启动,是四条里唯一有运行证据的一条。 */
+  readonly status: 'observed-pending' | 'provided-both' | 'provided-old-only' | 'found-nowhere'
+  readonly source: 'capture' | 'static'
 }
 
 /** 一份诊断包。 */
@@ -66,11 +68,11 @@ function candidatesFor(oldSymbols: readonly string[], newSymbols: readonly strin
  * @param snapshot profile 读取结果
  * @param evaluation peer 评估结果
  * @param plugin 插件包名
- * @param options `target` 目标官方版本、`cacheDir` 面缓存目录
+ * @param options `target` 目标官方版本、`cacheDir` 面缓存目录、`symptoms` 真启动采集到的症状
  * @returns 诊断包
  * @throws 插件在 profile 里解析不到
  */
-export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Evaluation, plugin: string, options: { target?: string | null; cacheDir?: string } = {}): Promise<DiagnosticBundle> {
+export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Evaluation, plugin: string, options: { target?: string | null; cacheDir?: string; symptoms?: { readonly entries: readonly { readonly module: string; readonly missingServices: readonly string[] }[] } | null } = {}): Promise<DiagnosticBundle> {
   const installed = snapshot.installed.find((entry) => entry.name === plugin)
   if (!installed) {
     const names = snapshot.installed.map((entry) => entry.name).join(', ')
@@ -117,10 +119,17 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
     }
   }
 
+  const observed = new Set<string>((options.symptoms?.entries ?? []).filter((entry) => entry.module === plugin).flatMap((entry) => entry.missingServices))
   const serviceKeys: ServiceKeyStatus[] = face.injects.map((key) => ({
     key,
-    status: oldProvided.has(key) && newProvided.has(key) ? 'provided-both' : oldProvided.has(key) ? 'provided-old-only' : 'found-nowhere',
+    ...(observed.has(key)
+      ? { status: 'observed-pending' as const, source: 'capture' as const }
+      : {
+          status: oldProvided.has(key) && newProvided.has(key) ? ('provided-both' as const) : oldProvided.has(key) ? ('provided-old-only' as const) : ('found-nowhere' as const),
+          source: 'static' as const,
+        }),
   }))
+  if (options.symptoms) notes.push('服务 key 判定来自真启动采集(rescue.symptoms/v1)')
   if (!options.target) notes.push('未给 --to:只报当前安装事实与 peer 判定,不做版本间面 diff')
 
   const blocked = evaluation.blocked.find((entry) => entry.plugin === plugin)
@@ -177,7 +186,9 @@ export function renderDiagnostic(bundle: DiagnosticBundle, report: readonly stri
   if (unknown.length > 0) lines.push(`两版都找不到、需要人工确认 ${unknown.length} 处:${unknown.map((gap) => `${gap.specifier}#${gap.symbol}`).join(', ')}`)
   for (const key of bundle.serviceKeys) {
     if (key.status === 'provided-both') continue
-    lines.push(key.status === 'provided-old-only' ? `服务 key ${key.key}:旧版有 provider,新版没找到` : `服务 key ${key.key}:两版包里都没找到 provider(可能由别的包提供,未验证)`)
+    if (key.status === 'observed-pending') lines.push(`  服务 key ${key.key}:真启动里插件卡在等它 —— 本 profile 内没有 provider(有运行证据)`)
+    else if (key.status === 'provided-old-only') lines.push(`  服务 key ${key.key}:旧版包里有 provider,新版没找到`)
+    else lines.push(`  服务 key ${key.key}:比对过的包里都没找到 provider(可能由没纳入比对的包提供,未验证)`)
   }
   for (const note of bundle.notes) lines.push(`注:${note}`)
   return `${lines.join('\n')}\n`
