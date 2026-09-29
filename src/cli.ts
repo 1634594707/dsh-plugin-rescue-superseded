@@ -288,7 +288,7 @@ fix / undo 都支持 --dry-run(只算不写);带 --json 时 stdout 只有 JSON,�
     const blockedNames = new Set(evaluation.blocked.map((entry) => entry.plugin))
     const verdicts = await Promise.all(targets.map((entry) => assessPlugin({ plugin: entry.name, installed: entry.version, runtime, market, blockedNow: blockedNames.has(entry.name), ...assessOptions })))
     const rows = marketRows(verdicts, snapshot.profile)
-    if (parsed.flags.json === true) console.log(JSON.stringify({ profile: snapshot.profile, runtime, installedRuntime, marketNotes: market.notes, rows }, null, 2))
+    if (parsed.flags.json === true) console.log(JSON.stringify({ profile: snapshot.profile, runtime, installedRuntime, fromCache: market.fromCache, marketNotes: market.notes, rows }, null, 2))
     else {
       for (const note of market.notes) console.log(`注:${note}`)
       console.log(renderMarket(rows, runtime === installedRuntime ? `本机 runtime ${runtime ?? '未识别'}` : `runtime ${runtime} · 本机装 ${installedRuntime ?? '未识别'}`))

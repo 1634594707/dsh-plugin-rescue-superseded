@@ -7,60 +7,115 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <strong>dsh-rescue 插件修复台</strong>
-        <span>官方更新后,先看作者修没修,再决定要不要打补丁</span>
-      </div>
-      <div class="toolbar">
-        <label for="profile">profile<select id="profile"></select></label>
-        <label for="target">对照版本<input id="target" value="0.2.0-rc.1" spellcheck="false" /></label>
-        <label class="check"><input id="offline" type="checkbox" />只用缓存</label>
-        <button id="refresh" class="primary" type="button">重新查</button>
-      </div>
-    </header>
-
-    <nav class="tabs" aria-label="视图">
-      <button id="tab-market" class="tab" type="button" aria-controls="view-market">插件市场</button>
-      <button id="tab-doctor" class="tab" type="button" aria-controls="view-doctor">本机诊断</button>
-      <button id="tab-journal" class="tab" type="button" aria-controls="view-journal">改动记录</button>
-    </nav>
-
-    <main>
-      <section id="view-market" class="view" role="region">
-        <div id="verdict" class="verdict" aria-live="polite"></div>
-        <div id="market" class="cards"></div>
-      </section>
-
-      <section id="view-doctor" class="view" role="region" hidden>
-        <div id="summary" class="chips"></div>
-        <div class="subtoolbar">
-          <label for="dsh">dsh 入口<input id="dsh" placeholder="dsh,或源码仓构建出的 bin.js 路径" spellcheck="false" /></label>
-          <label class="check"><input id="allowLive" type="checkbox" />允许在默认 home 真启动</label>
-          <button id="capture" type="button">真启动采集症状</button>
-          <span class="hint">peer 拦截静态就算得出;缺 provider 这类运行期症状要靠真启动拿证据。</span>
+    <div class="app">
+      <aside class="rail">
+        <div class="mark">
+          <span class="mark-glyph" aria-hidden="true"></span>
+          <span class="mark-text"><strong>dsh-rescue</strong><small>插件修复台</small></span>
         </div>
-        <div id="findings" class="cards"></div>
-      </section>
 
-      <section id="view-journal" class="view" role="region" hidden>
-        <div id="journal" class="cards"></div>
-      </section>
-    </main>
+        <nav class="nav" aria-label="视图">
+          <button id="tab-market" class="nav-item" type="button" aria-selected="true" aria-controls="view-market">
+            <span class="nav-icon" data-icon="store" aria-hidden="true"></span>
+            <span class="nav-label">插件市场</span>
+            <span class="nav-tally" id="tally-market"></span>
+          </button>
+          <button id="tab-doctor" class="nav-item" type="button" aria-controls="view-doctor">
+            <span class="nav-icon" data-icon="stethoscope" aria-hidden="true"></span>
+            <span class="nav-label">本机诊断</span>
+            <span class="nav-tally" id="tally-doctor"></span>
+          </button>
+          <button id="tab-journal" class="nav-item" type="button" aria-controls="view-journal">
+            <span class="nav-icon" data-icon="history" aria-hidden="true"></span>
+            <span class="nav-label">改动记录</span>
+            <span class="nav-tally" id="tally-journal"></span>
+          </button>
+        </nav>
 
-    <section id="log" class="log" aria-live="polite">
-      <header class="log-head">
-        <strong>动作记录</strong>
-        <button id="logClear" type="button">清空</button>
-      </header>
-      <div id="logBody" class="log-body"></div>
-    </section>
+        <div class="rail-foot">
+          <p class="rail-home" id="rail-home" title="内核读写的 dsh home"></p>
+          <p class="rail-note">写动作一律两步:先预览,再确认。<br />不 fork、不 push、不开 PR。</p>
+        </div>
+      </aside>
 
-    <footer>
-      <span>写动作一律两步:先预览要改哪一行,再确认执行。</span>
-      <span>还原靠改前的 <code>.bak</code>,逐字节比对。</span>
-      <span>本工具不 fork、不 push、不开 PR,只备料。</span>
-    </footer>
+      <div class="main">
+        <header class="topbar">
+          <div class="context">
+            <label class="field">
+              <span class="field-label">profile</span>
+              <select id="profile"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">对照版本</span>
+              <input id="target" value="0.2.0-rc.1" spellcheck="false" />
+            </label>
+            <label class="switch">
+              <input id="offline" type="checkbox" />
+              <span class="switch-track" aria-hidden="true"></span>
+              <span>只用缓存</span>
+            </label>
+          </div>
+          <div class="top-actions">
+            <div class="search">
+              <span class="search-icon" data-icon="search" aria-hidden="true"></span>
+              <input id="search" type="search" placeholder="筛插件名…" spellcheck="false" />
+            </div>
+            <button id="refresh" class="btn btn-primary" type="button"><span class="btn-icon" data-icon="refresh"></span>重新查</button>
+          </div>
+        </header>
+
+        <main class="scroller">
+          <section id="view-market" class="view" role="region">
+            <div id="hero" class="hero"></div>
+            <div class="filters" id="filters"></div>
+            <div id="market" class="grid"></div>
+          </section>
+
+          <section id="view-doctor" class="view" role="region" hidden>
+            <div id="summary" class="facts-bar"></div>
+            <div class="probe">
+              <label class="field field-grow">
+                <span class="field-label">dsh 入口</span>
+                <input id="dsh" placeholder="dsh,或源码仓构建出的 bin.js 路径" spellcheck="false" />
+              </label>
+              <label class="check"><input id="allowLive" type="checkbox" /><span class="check-box" aria-hidden="true"></span>允许在默认 home 真启动</label>
+              <button id="capture" class="btn" type="button"><span class="btn-icon" data-icon="play"></span>真启动采集症状</button>
+              <p class="probe-hint">peer 拦截静态就算得出;缺 provider 这类运行期症状要靠真启动拿证据。</p>
+            </div>
+            <div id="findings" class="grid"></div>
+          </section>
+
+          <section id="view-journal" class="view" role="region" hidden>
+            <div id="journal" class="timeline"></div>
+          </section>
+        </main>
+
+        <section id="drawer" class="drawer" aria-live="polite">
+          <header class="drawer-head">
+            <button id="drawerToggle" class="drawer-caret" type="button" aria-expanded="true">
+              <span class="btn-icon" data-icon="chevron"></span>
+            </button>
+            <h2>动作记录<small id="logCount"></small></h2>
+            <div class="drawer-spacer"></div>
+            <button id="logClear" class="btn btn-quiet" type="button">清空</button>
+          </header>
+          <div id="logBody" class="drawer-body"></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="confirm" class="confirm" hidden>
+      <div class="confirm-body">
+        <p class="confirm-label" id="confirmLabel"></p>
+        <p class="confirm-preview" id="confirmPreview"></p>
+      </div>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="btn btn-quiet" type="button">取消</button>
+        <button id="confirmGo" class="btn btn-danger" type="button">确认执行</button>
+      </div>
+    </div>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
 
     <script type="module" src="./shell.js"></script>
   </body>

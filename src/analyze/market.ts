@@ -68,6 +68,8 @@ export interface MarketIndex {
 export interface MarketVerdict {
   readonly plugin: string
   readonly installed: string
+  /** 判定时该插件是否正被预检拦下:界面据此决定语气与排序,不靠猜文案。 */
+  readonly blockedNow: boolean
   readonly inMarket: boolean
   readonly marketVersion: string | null
   readonly updateAvailable: boolean
@@ -227,6 +229,7 @@ export async function assessPlugin(input: {
   const base: Omit<MarketVerdict, 'verdict' | 'upstreamCovers' | 'updateAvailable' | 'marketVersion' | 'release' | 'releaseNote' | 'evidence' | 'headline'> = {
     plugin: input.plugin,
     installed: input.installed,
+    blockedNow: input.blockedNow,
     inMarket: entry !== undefined,
     downloads,
     category,
