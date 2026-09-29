@@ -10,11 +10,12 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
-/** 一条未激活条目。 */
+/** 一条启动期的症状。 */
 export interface SymptomEntry {
   readonly entryId: string
   readonly module: string
-  readonly state: 'pending' | 'failed'
+  /** `skipped` 是宿主预检在启动时整个 bundle 跳过 —— 与"起来了但在等服务"是两回事。 */
+  readonly state: 'pending' | 'failed' | 'skipped'
   readonly missingServices: readonly string[]
   readonly detail?: string
 }
@@ -59,6 +60,18 @@ export function parseStartupOutput(output: string): { entries: SymptomEntry[]; r
   for (const match of output.matchAll(/^(\S+)\s+\((@?[^)]+)\):\s*(?:failed|error)\s*-?\s*(.*)$/gim)) {
     const detail = String(match[3] ?? '').trim()
     add({ entryId: String(match[1]), module: String(match[2]), state: 'failed', missingServices: [], ...(detail === '' ? {} : { detail }) })
+  }
+  // `dsh: skipping profile bundle "dsh-better-reasoning-effort": Error: Plugin … is incompatible with dsh 0.2.0-rc.1: peerDependencies {…}. …`
+  for (const match of output.matchAll(/skipping profile bundle "([^"]+)":\s*(.*)$/gim)) {
+    const reason = String(match[2] ?? '').trim()
+    const incompat = /is incompatible with (dsh [^:]+):\s*(peerDependencies \{.*?\})/.exec(reason)
+    add({
+      entryId: '',
+      module: String(match[1]),
+      state: 'skipped',
+      missingServices: [],
+      detail: incompat ? `与 ${incompat[1]} 不兼容 —— ${incompat[2]}` : reason.slice(0, 200),
+    })
   }
   // 表格式:`Plugin    Missing services` 之下的 `@scope/pkg    key1, key2`
   const table = /^(\S.*?)\s{2,}([A-Za-z][\w:.,-]*(?:,\s*[A-Za-z][\w:.,-]*)+)\s*$/gm
@@ -124,7 +137,7 @@ export interface CaptureInput {
  * `MISSING_CREDENTIAL` 不在其中 —— 那种情况下 dsh 自己会退出,拿它当掐断信号会给采集加竞态
  * (实测:掐早了会读到空输出)。
  */
-const STOP_PATTERNS: readonly RegExp[] = [/did not activate/i, /Plugins waiting for services/i, /Full diagnostics:/i]
+const STOP_PATTERNS: readonly RegExp[] = [/did not activate/i, /Plugins waiting for services/i, /Full diagnostics:/i, /skipping profile bundle/i]
 
 /**
  * 启动一次 dsh 并采集症状。
@@ -221,8 +234,9 @@ export async function runCapture(input: CaptureInput): Promise<Symptoms> {
 export function renderSymptoms(symptoms: Symptoms): string {
   const lines = [`症状 ${symptoms.schema}(profile ${symptoms.profile},退出码 ${symptoms.exitCode ?? '无'}${symptoms.timedOut ? ',超时中断' : ''})`]
   if (symptoms.entries.length === 0) lines.push('  没有未激活条目:这次启动没有插件被卡住')
+  const label: Record<SymptomEntry['state'], string> = { pending: 'PENDING', failed: 'FAILED', skipped: '预检跳过' }
   for (const entry of symptoms.entries) {
-    lines.push(`  ${entry.module} ${entry.entryId ? `(${entry.entryId})` : ''} ${entry.state === 'pending' ? 'PENDING' : 'FAILED'}${entry.missingServices.length ? ` 等待服务:${entry.missingServices.join(', ')}` : ''}${entry.detail ? ` 摘要:${entry.detail}` : ''}`)
+    lines.push(`  ${entry.module} ${entry.entryId ? `(${entry.entryId})` : ''} ${label[entry.state]}${entry.missingServices.length ? ` 等待服务:${entry.missingServices.join(', ')}` : ''}${entry.detail ? ` 摘要:${entry.detail}` : ''}`)
   }
   if (symptoms.reportPath) lines.push(`  官方报告:${symptoms.reportPath}`)
   for (const note of symptoms.notes) lines.push(`  注:${note}`)

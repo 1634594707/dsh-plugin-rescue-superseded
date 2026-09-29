@@ -258,6 +258,12 @@ M0 的交付物是"每条有可运行 demo 或书面结论(含不可行结论与
 8  多 profile 体验(共享展示、跨 profile 复制修复决定)—— 目前无任何验收,最后做
 ```
 
+## 端到端实测后排进队列的缺口(2026-09-29)
+
+**doctor / why 在"源码宿主 + 排演 home"下看不到 runtime。** 排演时宿主跑的是 harness checkout 的 `apps/cli/lib/bin.js`,`@deepseek-ai/*` 不在 home 的 `node_modules` 里,于是 `runtime 未识别`、peer 判定停在 `unknown`(实测记录见 [README](README.md#端到端实测记录2026-09-29排演-home))。要补的是第二个解析根:让 `--host DIR`(或等价输入)把源码 checkout 的 runtime 包纳入 `resolutionRoots`,同时把"runtime 来自外部指定"打进报告抬头,免得被读成本机事实。
+
+排在上面队列第 1 条之前还是之后,取决于下一件事:**这个缺口目前只影响 doctor 的被拦列表**,同一条判据在 `market --runtime` 上是完整的(读 npm manifest,不依赖本机 runtime 包),运行证据由 `capture` 的 `skipped` 症状补上。所以它是"少一条便利",不是"判错"。
+
 ## 期限被压缩时的砍法(从每个阶段的末尾往前砍)
 
 - **阶段 1 内**:先砍 A8 的精确计量(给一个粗数即可)、A7 的清单完备性、S2、**A3 附带(headless 开 HMR)**。**绝不砍 A10 / A11 / A12 / A13 / A14 / A15 / A5** —— 它们决定产品在关键时刻是否存在、以及"可还原"这句话是否真话。

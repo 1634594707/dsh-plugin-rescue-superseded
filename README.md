@@ -55,13 +55,32 @@ dsh-rescue doctor --profile desktop
 
 **证据不唯一就不指认。** peer 范围解析不了、豁免条目对不上当前 runtime、矩阵没有覆盖该区间的记录 —— 这些都只报观察到的事实与根因,不推荐自动修法。`matrix.json` 目前是空的,所以 `doctor` 只给分类与「让作者放宽范围」这一条,不会替你冒风险。
 
-## 实测到的五条(都在这台机器上跑出来,不是推断)
+## 实测到的七条(都在这台机器上跑出来,不是推断)
 
 1. **`^0.2.0` 和 `>=0.2.0` 都不放行 `0.2.0-rc.1`**,即使带 `includePrerelease: true`(宿主同款判据)。所以 `pr` 生成的建议范围是 `>=0.2.0-0 <0.3.0` —— 给作者提 `^0.2.0` 等于提一个仍然被拦的 PR。
 2. **可选条目未激活不写 `startup-*.log`,只打一行警告**。实测两次:`dsh: warning: 1 entry did not activate` + `… pending (waiting for service: webServer)`,而 `logs/` 里什么都没有 —— 所以 `capture` 解析的是启动摘要,报告文件只是顺带。
 3. **"peer 过了"不等于"能用"**。npm 上的 `@michengai/dsh-archive-manager` 已经出到 1.0.7 并把 peer 放宽到含 `0.2.0-rc.1`;真启动后它不再被拦,而是卡在等一个 headless profile 里根本没有的 `webServer`。同一个插件,失效种类从 `peer-range-stale` 变成缺 provider —— 这正是静态分析与真启动必须分工的原因。
 4. **判据不能搬到 Rust 去算**:Rust 的 `semver` crate 对真实插件写的 `0.1.0-rc.8 || 0.1.1-rc.2 || …` 是 16/16 解析失败,而宿主的门禁就是 node-semver。壳只渲染,内核留在 JS。
 5. **社区插件的"没人修"多半是"没人升级"**。本机 `desktop` profile 的 8 个社区插件,市场索引全部有更新版;拿 0.2.0-rc.1 逐个判,7 个的作者已经把 peer 放宽到覆盖(archive-manager 1.0.7 的 17 个 dsh peer 全覆盖,作者说明原话是"可以用在 DSH 0.2.0-rc.1 上"),只有 `dsh-better-reasoning-effort` 0.5.0 的上限还停在 `^0.1.7-rc.1` —— 那才是真需要提 PR 的一条。
+6. **F0 豁免写的就是宿主读的那一份**。在排演 home 里对 0.2.0-rc.1 装 `dsh-better-reasoning-effort@0.5.0`:宿主**安装时就拒**(`dsh: installation rejected: … is incompatible with dsh 0.2.0-rc.1`)并点名逃生口 `dsh plugin allow-version`。`fix exempt` 写出 `profiles/<name>/compatibility.json` 后,同一句 `dsh plugin add` 装上了,`dsh plugin version-exemptions` 打印出的正是我们写的那条 —— `packages/boot/app-boot/src/profile-compatibility.ts:10` 的 `PROFILE_COMPATIBILITY_FILENAME` 与 `join(profileDir, …)` 是同一份文件。
+7. **启动时最常见的症状是"整个 bundle 被跳过"**,宿主打的是 `dsh: skipping profile bundle "X": Error: Plugin … is incompatible with dsh <V>: peerDependencies {…}`。`capture` 原先只认 `did not activate` / `waiting for service`,这一行**一条都不报** —— 实测的 A/B 里"修好前"和"修好后"输出一模一样才暴露出来。现在它是 `state: 'skipped'`,并把宿主给的 peer 范围原样带进 `detail`。
+
+## 端到端实测记录(2026-09-29,排演 home)
+
+`C:\Users\Administrator\AppData\Local\Temp\dsh-fix-e2e-home` + harness 0.2.0-rc.1 源码宿主,全程没碰 `~/.dsh`:
+
+| 步骤 | 结果 |
+|---|---|
+| `dsh plugin add dsh-better-reasoning-effort@0.5.0` | 拒装,并给出 `allow-version` 逃生口 |
+| `fix exempt … --runtime 0.2.0-rc.1 --accept-risk --dry-run` | 只报将写哪个文件,不落盘 |
+| 同上去掉 `--dry-run` | 写出 `compatibility.json`,journal + `undo.md` 落在 `.dsh-rescue/` |
+| 再 `dsh plugin add` | 装上(`+ dsh-better-reasoning-effort 0.5.0`) |
+| `capture` | 修好前:`预检跳过 摘要:与 dsh 0.2.0-rc.1 不兼容 —— peerDependencies {…}`;修好后:没有未激活条目 |
+| `dsh plugin version-exemptions` | 打印出我们写的那条,证明宿主读的是同一份文件 |
+| `undo 1` | 预览与实际一致("将删掉这次创建的 compatibility.json"),文件删除,不留 `{}` 残留 |
+| 再 `capture` | 又回到 `预检跳过` —— 还原是真的把状态倒回去 |
+
+**这个 home 里 `doctor` / `why` 看不到 runtime**(`runtime 未识别`):宿主从源码 checkout 跑,`@deepseek-ai/*` 不在 home 的 `node_modules` 里,所以 peer 判定停在 `unknown` 而不是猜一个结论。同一条判据在 `market --runtime 0.2.0-rc.1` 上是完整的(它读 npm 上的 manifest,不依赖本机 runtime 包),运行证据由 `capture` 补。要让 doctor 也看见,得给它第二个解析根(源码 checkout)—— 记在 [roadmap.md](roadmap.md),没顺手做。
 
 ## 排演一个新版本(不碰你的 profile)
 
@@ -93,7 +112,7 @@ src/
   matrix/schema.ts    rescue.matrix/v2 的受控词表与字段校验(未知枚举值拒绝入库)
   report/render.ts    确定性排序的报告输出:同一 profile 两次跑,输出逐字节相同
   state/store.ts      rescue.state/v1:意图、before、尝试计数、还原判定、undo.md
-test/                 70 项:profile 读取、peer 判定、市场对照与缓存、argv 闸门、写盘与还原、备份缺失不猜、只读姿态拒绝写
+test/                 72 项:profile 读取、peer 判定、市场对照与缓存、argv 闸门、写盘与还原、备份缺失不猜、只读姿态拒绝写
 matrix.json           已知失效知识库(受控词表在 src/matrix/schema.ts)
 ```
 
@@ -101,7 +120,7 @@ matrix.json           已知失效知识库(受控词表在 src/matrix/schema.ts
 
 ```sh
 pnpm install
-pnpm run gate                                                   # typecheck(含测试)→ build → 70 项测试
+pnpm run gate                                                   # typecheck(含测试)→ build → 72 项测试
 node src/cli.ts doctor --profile desktop                        # Node 24 直接跑源码,不必先 build
 node lib/cli.js fix row <行 id> --disabled false --profile ...   # 或跑构建产物
 ```

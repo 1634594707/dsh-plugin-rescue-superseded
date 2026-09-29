@@ -76,7 +76,7 @@ function candidatesFor(oldSymbols: readonly string[], newSymbols: readonly strin
  * @returns 诊断包
  * @throws 插件在 profile 里解析不到
  */
-export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Evaluation, plugin: string, options: { target?: string | null; cacheDir?: string; symptoms?: { readonly entries: readonly { readonly module: string; readonly missingServices: readonly string[] }[] } | null; market?: MarketIndex | null } = {}): Promise<DiagnosticBundle> {
+export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Evaluation, plugin: string, options: { target?: string | null; cacheDir?: string; symptoms?: { readonly entries: readonly { readonly module: string; readonly state?: 'pending' | 'failed' | 'skipped'; readonly missingServices: readonly string[]; readonly detail?: string }[] } | null; market?: MarketIndex | null } = {}): Promise<DiagnosticBundle> {
   const installed = snapshot.installed.find((entry) => entry.name === plugin)
   if (!installed) {
     const names = snapshot.installed.map((entry) => entry.name).join(', ')
@@ -134,6 +134,8 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
         }),
   }))
   if (options.symptoms) notes.push('服务 key 判定来自真启动采集(rescue.symptoms/v1)')
+  const skipped = (options.symptoms?.entries ?? []).filter((entry) => entry.state === 'skipped' && (entry.module === plugin || plugin.endsWith(entry.module)))
+  if (skipped.length > 0) notes.push(`真启动里这个 bundle 被预检跳过:${skipped[0]?.detail ?? '宿主未给出原因'}`)
   if (!options.target) notes.push('未给 --to:只报当前安装事实与 peer 判定,不做版本间面 diff')
 
   const blocked = evaluation.blocked.find((entry) => entry.plugin === plugin)
@@ -149,6 +151,10 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
     if (at === null || (blocked?.gaps ?? []).some((gap) => gap.peer === peer)) peerGaps.push(`${peer} 要 ${range},已装 ${at ?? '未装'}`)
   }
 
+  // 没算出本机 runtime 就一次比较都没做成,报 compatible 等于把"没查"说成"查过且通过"。
+  const runtimeKnown = evaluation.runtimeVersion !== null
+  if (!runtimeKnown && Object.keys(peerRanges).length > 0) notes.push('本机 runtime 没识别出来:peer 判定停在 unknown,下面只列出声明了哪些范围')
+
   return {
     schema: 'rescue.diagnostic/v1',
     generatedAt: new Date().toISOString(),
@@ -156,7 +162,7 @@ export async function buildDiagnostic(snapshot: ProfileSnapshot, evaluation: Eva
     runtime: { installed: evaluation.runtimeVersion, target: options.target ?? null },
     plugin: { name: installed.name, version: installed.version, files: face.files },
     peer: {
-      verdict: blocked ? 'blocked' : exempted ? 'exempted' : Object.keys(peerRanges).length === 0 ? 'unknown' : 'compatible',
+      verdict: !runtimeKnown && !blocked && !exempted ? 'unknown' : blocked ? 'blocked' : exempted ? 'exempted' : Object.keys(peerRanges).length === 0 ? 'unknown' : 'compatible',
       ranges: peerRanges,
       gaps: peerGaps,
     },

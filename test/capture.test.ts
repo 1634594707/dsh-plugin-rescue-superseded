@@ -36,6 +36,27 @@ test('a hard failure with its own error line is captured too', () => {
   assert.match(String(parsed.entries[0]?.detail), /Cannot find package/)
 })
 
+/** 实测到的第二种真症状:宿主预检在启动时把整个 bundle 跳过(作者未修 peer 的那一类)。 */
+const REAL_SKIPPED = [
+  'dsh: skipping profile bundle "dsh-better-reasoning-effort": Error: Plugin dsh-better-reasoning-effort@0.5.0 is incompatible with dsh 0.2.0-rc.1: peerDependencies {"@deepseek-ai/dsh-settings":"^0.1.5-alpha.1 || ^0.1.7-rc.1"}. Running it may cause crashes or data loss. Update the plugin or install a plugin version compatible with this dsh runtime.',
+  '',
+  'dsh: MISSING_CREDENTIAL: llm-deepseek: no API key for provider route "deepseek-official"',
+  '',
+].join('\n')
+
+test('a bundle the host precheck skips at startup is a symptom, not silence', () => {
+  const parsed = parseStartupOutput(REAL_SKIPPED)
+  assert.equal(parsed.entries.length, 1, `实际解析到:${JSON.stringify(parsed.entries)}`)
+  const [entry] = parsed.entries
+  assert.equal(entry?.module, 'dsh-better-reasoning-effort')
+  assert.equal(entry?.state, 'skipped')
+  assert.deepEqual(entry?.missingServices, [])
+  assert.match(String(entry?.detail), /与 dsh 0\.2\.0-rc\.1 不兼容/)
+  assert.match(String(entry?.detail), /peerDependencies \{/, 'peer 范围是这条症状的全部信息量,不能丢')
+  assert.doesNotMatch(String(entry?.detail), /Running it may cause/, '宿主的劝告文本不是症状')
+  assert.match(renderSymptoms({ schema: 'rescue.symptoms/v1', capturedAt: '', profile: 'headless', home: '', command: [], exitCode: 1, timedOut: false, entries: parsed.entries, reportPath: null, notes: [] }), /预检跳过/)
+})
+
 test('the report table and the Full diagnostics path are both read', () => {
   const report = [
     'Plugins waiting for services (2):',

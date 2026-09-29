@@ -87,3 +87,16 @@ test('a service key seen in a real boot is reported as evidence, not as an unver
   assert.match(renderDiagnostic(plain), /未验证/)
   fs.rmSync(home, { recursive: true, force: true })
 })
+
+test('an undetected runtime is never reported as compatible', async () => {
+  const home = makeHome()
+  fs.rmSync(path.join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-app-boot'), { recursive: true, force: true })
+  const snapshot = readProfile(home, 'default')
+  const evaluation = evaluateProfile(snapshot)
+  assert.equal(evaluation.runtimeVersion, null, 'fixture 改掉了 app-boot,runtime 应当算不出来')
+  const bundle = await buildDiagnostic(snapshot, evaluation, '@someone/dsh-broken', {})
+  assert.equal(bundle.peer.verdict, 'unknown', '一次比较都没做成,不能说 compatible')
+  assert.match(bundle.notes.join(' '), /没识别出来/)
+  assert.match(renderDiagnostic(bundle), /peer 判定:unknown/)
+  fs.rmSync(home, { recursive: true, force: true })
+})

@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { isMap, isSeq, parseDocument, type YAMLMap, type YAMLSeq } from 'yaml'
 
 import { COMPATIBILITY_FILENAME, type ProfileSnapshot } from '../analyze/profile.ts'
-import type { IntentRecord, RescueState } from '../state/store.ts'
+import type { AppliedRecord, IntentRecord, RescueState } from '../state/store.ts'
 import { beginIntent, confirmApplied, planRestore } from '../state/store.ts'
 import { snapshotFile, writeFileAtomically } from '../write/atomic.ts'
 
@@ -217,6 +217,21 @@ export async function applyRowChange(
 }
 
 /**
+ * @param record 已应用记录
+ * @param readable 现在真能读到的备份路径
+ * @returns 预览文案 —— 与下面的 commit 分支走同一条判定,免得"预览说还原、执行是删除"
+ */
+function describeRestore(record: AppliedRecord, readable: readonly string[]): string {
+  if (readable[0] !== undefined) return `dry-run:将从备份 ${path.basename(readable[0])} 逐字节还原 ${path.basename(record.target)}`
+  if (record.before.kind !== 'allow') return `dry-run:这条记录(${record.fixKind})没有可写回的原值,请用备份 ${record.backupPaths.join(', ') || '无'} 人工还原`
+  const table = fs.existsSync(record.target) ? (JSON.parse(fs.readFileSync(record.target, 'utf8')) as Record<string, string[]>) : {}
+  if (record.before.priorEntry === null) delete table[record.before.key]
+  else table[record.before.key] = record.before.priorEntry.split(',')
+  if (record.created && Object.keys(table).length === 0) return `dry-run:将删掉这次创建的 ${path.basename(record.target)},不留空文件`
+  return `dry-run:将在 ${path.basename(record.target)} 里把 ${record.before.key} 恢复成 ${record.before.priorEntry === null ? '「不存在」' : record.before.priorEntry},其余记录保留`
+}
+
+/**
  * 还原一条已应用记录。
  *
  * @param state 当前 journal
@@ -234,7 +249,7 @@ export async function undoApplied(state: RescueState, ordinal: number, options?:
     const missing = plan.missing.length > 0 ? plan.missing.join(', ') : '该记录没有登记备份'
     throw new Error(`无法还原:备份缺失(${missing})。不猜原值 —— 该项请人工处理,重跑 doctor 会把它降级为迁移指南。`)
   }
-  if (options?.dryRun) return { state, message: `dry-run:将从 ${readable[0] ?? '记录里的原值'} 还原 ${record.target}`, target: record.target, backupPath: readable[0] ?? null }
+  if (options?.dryRun) return { state, message: describeRestore(record, readable), target: record.target, backupPath: readable[0] ?? null }
 
   if (plan.action === 'restore-backup' && readable[0] !== undefined) {
     const expected = hashOf(fs.readFileSync(readable[0], 'utf8'))
